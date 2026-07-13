@@ -3,7 +3,7 @@ import type { ObjectValues } from './types';
 export const EXTENSION_ID = 'pi-arsenal';
 
 const SUB_EXTENSION_IDS = {
-  hashline_diff: 'hashline_diff',
+  tmux_popup: 'tmux_popup',
 } as const;
 
 export type SubExtentionIds = ObjectValues<typeof SUB_EXTENSION_IDS>;

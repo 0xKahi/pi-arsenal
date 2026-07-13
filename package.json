@@ -46,15 +46,16 @@
   "devDependencies": {
     "@biomejs/biome": "^2.4.15",
     "@changesets/cli": "^2.31.0",
-    "@earendil-works/pi-ai": "^0.79.9",
-    "@earendil-works/pi-coding-agent": "^0.79.9",
-    "@earendil-works/pi-tui": "^0.79.9",
+    "@earendil-works/pi-ai": "^0.80.3",
+    "@earendil-works/pi-coding-agent": "^0.80.3",
+    "@earendil-works/pi-tui": "^0.80.3",
     "@types/bun": "latest",
     "@types/node": "^24.0.0",
     "bun-types": "latest",
     "typescript": "^5"
   },
   "dependencies": {
+    "@0xkahi/cli-dye": "^1.1.0",
     "typebox": "^1.3.0",
     "zod": "^4.4.3"
   }
