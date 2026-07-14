@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/0xKahi/pi-arsenal/main/assets/config.schema.json",
+  "title": "Pi Arsenal Extension Configuration",
+  "description": "Configuration schema for the pi-arsenal extension",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "tmux_popup": {
+      "default": {
+        "enabled": false,
+        "width": 50,
+        "height": 50,
+        "fileCommand": "nvim"
+      },
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "width": {
+          "default": 50,
+          "type": "number",
+          "minimum": 10,
+          "maximum": 100
+        },
+        "height": {
+          "default": 50,
+          "type": "number",
+          "minimum": 10,
+          "maximum": 100
+        },
+        "fileCommand": {
+          "default": "nvim",
+          "type": "string"
+        }
+      }
+    }
+  }
+}

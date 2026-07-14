@@ -1,0 +1,99 @@
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { ConfigLoader, type ConfigResolver } from '../../src/config/config-loader';
+
+const createCtx = (trusted: boolean, cwd: string) => ({
+  cwd,
+  isProjectTrusted: () => trusted,
+});
+
+const createResolver = (globalPath?: string, projectPath?: string): ConfigResolver => ({
+  findExtensionConfig: input => {
+    if (input.type === 'global') return { exists: Boolean(globalPath), path: globalPath ?? '' };
+    return { exists: Boolean(projectPath), path: projectPath ?? '' };
+  },
+});
+
+describe('ConfigLoader', () => {
+  let tmpDir: string;
+  let globalPath: string;
+  let projectPath: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(path.join(tmpdir(), 'pi-arsenal-config-'));
+    globalPath = path.join(tmpDir, 'global-config.json');
+    projectPath = path.join(tmpDir, 'project-config.json');
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('uses defaults when no configuration files exist', () => {
+    const result = ConfigLoader.load(createCtx(false, tmpDir), createResolver());
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.config.tmux_popup).toEqual({
+      enabled: false,
+      width: 50,
+      height: 50,
+      fileCommand: 'nvim',
+    });
+  });
+
+  it('applies global configuration overrides', () => {
+    writeFileSync(globalPath, JSON.stringify({ tmux_popup: { enabled: true, width: 80 } }));
+
+    const result = ConfigLoader.load(createCtx(false, tmpDir), createResolver(globalPath));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.config.tmux_popup).toEqual({
+      enabled: true,
+      width: 80,
+      height: 50,
+      fileCommand: 'nvim',
+    });
+  });
+
+  it('fails when dimensions are out of bounds', () => {
+    writeFileSync(globalPath, JSON.stringify({ tmux_popup: { width: 200 } }));
+
+    const result = ConfigLoader.load(createCtx(false, tmpDir), createResolver(globalPath));
+    expect(result.success).toBe(false);
+  });
+
+  it('layers trusted project configuration over global', () => {
+    writeFileSync(globalPath, JSON.stringify({ tmux_popup: { enabled: true, height: 60 } }));
+    writeFileSync(projectPath, JSON.stringify({ tmux_popup: { width: 75 } }));
+
+    const result = ConfigLoader.load(createCtx(true, tmpDir), createResolver(globalPath, projectPath));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.config.tmux_popup).toEqual({
+      enabled: true,
+      width: 75,
+      height: 60,
+      fileCommand: 'nvim',
+    });
+  });
+
+  it('ignores project configuration when project is untrusted', () => {
+    writeFileSync(globalPath, JSON.stringify({ tmux_popup: { enabled: true } }));
+    writeFileSync(projectPath, JSON.stringify({ tmux_popup: { enabled: false, width: 30 } }));
+
+    const result = ConfigLoader.load(createCtx(false, tmpDir), createResolver(globalPath, projectPath));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.config.tmux_popup.enabled).toBe(true);
+    expect(result.config.tmux_popup.width).toBe(50);
+  });
+
+  it('fails on malformed configuration', () => {
+    writeFileSync(globalPath, '{ not valid json');
+
+    const result = ConfigLoader.load(createCtx(false, tmpDir), createResolver(globalPath));
+    expect(result.success).toBe(false);
+  });
+});

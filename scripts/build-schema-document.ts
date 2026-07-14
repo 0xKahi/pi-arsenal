@@ -12,7 +12,7 @@ export function createConfigJsonSchema(): Record<string, unknown> {
     $schema: 'http://json-schema.org/draft-07/schema#',
     $id: 'https://raw.githubusercontent.com/0xKahi/pi-arsenal/main/assets/config.schema.json',
     title: 'Pi Arsenal Extension Configuration',
-    description: 'Configuration schema for pi-btw extension',
+    description: 'Configuration schema for the pi-arsenal extension',
     ...jsonSchema,
   };
 }

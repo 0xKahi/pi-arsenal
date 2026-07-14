@@ -42,8 +42,6 @@ export class PathUtil {
     return { exists: false, path: filePath };
   }
 
-  static findExtensionConfig(input: { type: 'global' }): FileSearchResult;
-  static findExtensionConfig(input: { type: 'project'; cwd: string }): FileSearchResult;
   static findExtensionConfig(input: FindConfigInput): FileSearchResult {
     switch (input.type) {
       case 'global': {
