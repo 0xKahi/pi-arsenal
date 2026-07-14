@@ -7,7 +7,7 @@ A multi-tool Pi extension with opt-in, configurable tools.
 Add `@0xkahi/pi-arsenal` to your Pi package dependencies and ensure it is listed in your Pi configuration so the extension loads at session start.
 
 ```bash
-pi package add @0xkahi/pi-arsenal
+pi install npm:@0xkahi/pi-arsenal
 ```
 
 ## Configuration
