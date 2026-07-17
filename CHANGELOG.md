@@ -1,5 +1,11 @@
 # @0xkahi/pi-arsenal
 
+## 0.0.2
+
+### Patch Changes
+
+- cb5ca6c: fix tmux_popup tool registration on new sessions
+
 ## 0.0.1
 
 ### Patch Changes
