@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { ConfigLoadResult } from '../../../src/config/config-loader';
-import { registerTmuxPopup, resetTmuxPopupRegistrationState } from '../../../src/extensions/tmux-popup/tmux-popup.extension';
+import { registerTmuxPopup } from '../../../src/extensions/tmux-popup/tmux-popup.extension';
 import type { createTmuxPopupTool } from '../../../src/extensions/tmux-popup/tmux-popup.tool';
 
 describe('registerTmuxPopup', () => {
@@ -26,7 +26,6 @@ describe('registerTmuxPopup', () => {
   beforeEach(() => {
     registerToolCalls = [];
     notifyCalls = [];
-    resetTmuxPopupRegistrationState();
   });
 
   it('does not register the tool when disabled', () => {
@@ -77,7 +76,7 @@ describe('registerTmuxPopup', () => {
     }
   });
 
-  it('is idempotent', () => {
+  it('re-registers the tool on each session rebind', () => {
     mock.module('../../../src/config/config-loader', () => ({
       ConfigLoader: {
         load: (): ConfigLoadResult => ({
@@ -87,9 +86,9 @@ describe('registerTmuxPopup', () => {
       },
     }));
 
-    const pi = createPi();
-    registerTmuxPopup(pi, createCtx());
-    registerTmuxPopup(pi, createCtx());
-    expect(registerToolCalls).toHaveLength(1);
+    // Simulate pi rebinding extensions for a new session: fresh pi mock per call
+    registerTmuxPopup(createPi(), createCtx());
+    registerTmuxPopup(createPi(), createCtx());
+    expect(registerToolCalls).toHaveLength(2);
   });
 });
