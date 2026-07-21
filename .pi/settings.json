@@ -1,3 +1,3 @@
 {
-  "packages": ["../", { "source": "npm:@0xkahi/pi-arsenal", "extensions": [], "skills": [] }]
+  "packages": ["../", { "source": "npm:@0xkahi/pi-arsenal", "extensions": [], "skills": [], "prompts": [] }]
 }
