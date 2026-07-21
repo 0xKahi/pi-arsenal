@@ -1,5 +1,11 @@
 # @0xkahi/pi-arsenal
 
+## 0.0.3
+
+### Patch Changes
+
+- 2c3e1a0: added tmux-open prompt
+
 ## 0.0.2
 
 ### Patch Changes
