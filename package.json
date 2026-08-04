@@ -26,9 +26,6 @@
   "pi": {
     "extensions": [
       "./index.ts"
-    ],
-    "prompts": [
-      "./prompts"
     ]
   },
   "scripts": {
