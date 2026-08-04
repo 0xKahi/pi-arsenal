@@ -1,10 +1,13 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir, userInfo } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
-import { EXTENSION_ID } from '../constants';
+import { EXTENSION_ID, type SubExtentionIds } from '../constants';
 
 const SHELL_VAR_REGEX = /\$\{([^}]+)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g;
+const PROMPT_FOLDER = 'prompts';
+const PACKAGE_NAME = '@0xkahi/pi-arsenal';
 
 export type FileSearchResult = {
   exists: boolean;
@@ -55,6 +58,31 @@ export class PathUtil {
 
   static findPiAuthConfig(): FileSearchResult {
     return PathUtil.findFile(path.join(getAgentDir(), 'auth.json'));
+  }
+
+  static findPromptFolder(extensionId: SubExtentionIds): FileSearchResult {
+    return PathUtil.findFile(path.join(PathUtil.getPackageRoot(), PROMPT_FOLDER, extensionId));
+  }
+
+  private static getPackageRoot(): string {
+    let currentPath = path.dirname(fileURLToPath(import.meta.url));
+
+    while (true) {
+      const packageJsonPath = PathUtil.findFile(path.join(currentPath, 'package.json'));
+
+      if (packageJsonPath.exists) {
+        const packageJson = JSON.parse(readFileSync(packageJsonPath.path, 'utf8')) as { name?: string };
+        if (packageJson.name === PACKAGE_NAME) {
+          return currentPath;
+        }
+      }
+
+      const parentPath = path.dirname(currentPath);
+      if (parentPath === currentPath) break;
+      currentPath = parentPath;
+    }
+
+    throw new Error(`Unable to locate ${PACKAGE_NAME} package root`);
   }
 
   private static getExtensionConfig(paths: string[]): string {
