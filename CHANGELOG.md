@@ -1,5 +1,11 @@
 # @0xkahi/pi-arsenal
 
+## 0.0.4
+
+### Patch Changes
+
+- 8725f01: lazy-load tmux_popup prompts
+
 ## 0.0.3
 
 ### Patch Changes
