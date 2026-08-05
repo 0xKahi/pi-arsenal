@@ -6,7 +6,7 @@ import { STATUS_WIDGET_KEY } from '../../../../src/extensions/p2p-hub/constants'
 import { P2pHubState, type P2pHubStateDeps } from '../../../../src/extensions/p2p-hub/p2p-hub-state';
 import { HubRegistry } from '../../../../src/extensions/p2p-hub/registry.util';
 import { PathUtil } from '../../../../src/utils/path.util';
-import { clearStatusWidget, updateStatusWidget } from '../../../../src/extensions/p2p-hub/widget/status-widget-controller';
+import { P2PWidgetController } from '../../../../src/extensions/p2p-hub/widget/status-widget-controller';
 
 function makeDeps(overrides: Partial<P2pHubStateDeps> & { name: string; registry: HubRegistry }): P2pHubStateDeps {
   return {
@@ -63,7 +63,7 @@ describe('status widget controller', () => {
   test('hides the widget when disconnected', () => {
     const state = spawn('agent-a');
     const { ui, calls } = makeUiSpy();
-    updateStatusWidget(ui, state);
+    P2PWidgetController.renderWidget(ui, state);
     expect(calls).toHaveLength(1);
     expect(calls[0]).toEqual({ key: STATUS_WIDGET_KEY, content: undefined, options: { placement: 'belowEditor' } });
   });
@@ -72,7 +72,7 @@ describe('status widget controller', () => {
     const state = spawn('agent-a');
     await state.createHub('widget-hub');
     const { ui, calls } = makeUiSpy();
-    updateStatusWidget(ui, state);
+    P2PWidgetController.renderWidget(ui, state);
     expect(calls).toHaveLength(1);
     const call = calls[0];
     expect(call?.options).toEqual({ placement: 'belowEditor' });
@@ -80,9 +80,9 @@ describe('status widget controller', () => {
     expect((call?.content as string[]).some(line => line.includes('agent-a'))).toBe(true);
   });
 
-  test('clearStatusWidget unconditionally removes the widget without touching the footer', () => {
+  test('clearWidget unconditionally removes the widget without touching the footer', () => {
     const { ui, calls } = makeUiSpy();
-    clearStatusWidget(ui);
+    P2PWidgetController.clearWidget(ui);
     expect(calls).toEqual([{ key: STATUS_WIDGET_KEY, content: undefined, options: { placement: 'belowEditor' } }]);
   });
 });

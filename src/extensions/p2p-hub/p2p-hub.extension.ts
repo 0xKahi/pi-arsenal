@@ -8,7 +8,7 @@ import { HubRegistry } from './registry.util';
 import { createP2pAskTool } from './tools/p2p-ask.tool';
 import { createP2pLsTool } from './tools/p2p-ls.tool';
 import { createP2pSendTool } from './tools/p2p-send.tool';
-import { clearStatusWidget, updateStatusWidget } from './widget/status-widget-controller';
+import { P2PWidgetController } from './widget/status-widget-controller';
 
 function isP2pHubEnabled(ctx: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted'>): boolean {
   const result = ConfigLoader.load(ctx);
@@ -64,7 +64,7 @@ export function activateP2pHub(pi: ExtensionAPI, initialCtx: ExtensionContext): 
     },
     onChange: () => {
       try {
-        if (latestCtx.mode === 'tui') updateStatusWidget(latestCtx.ui, state);
+        if (latestCtx.mode === 'tui') P2PWidgetController.renderWidget(latestCtx.ui, state);
       } catch {
         // UI unavailable - nothing to update.
       }
@@ -76,7 +76,7 @@ export function activateP2pHub(pi: ExtensionAPI, initialCtx: ExtensionContext): 
     if (!enabled() && state.isConnected()) {
       state.disconnect('disabled');
       try {
-        clearStatusWidget(ctx.ui);
+        P2PWidgetController.clearWidget(ctx.ui);
       } catch {
         // UI unavailable - nothing to clear.
       }
