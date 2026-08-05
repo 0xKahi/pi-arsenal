@@ -63,7 +63,7 @@ export function buildHubModalFactory(
       tabs: [tab],
       navigation: new VimNavigationScheme(),
       frame,
-      height: 'half',
+      height: 'auto',
       title: () => {
         const hubName = state.getHubName();
         return hubName ? `Current Hub: ${hubName} (connected)` : 'Current Hub: (none)';
