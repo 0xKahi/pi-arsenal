@@ -3,7 +3,11 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { KeybindingsManager, Theme } from '@earendil-works/pi-coding-agent';
-import { buildHubModalFactory, type P2pHubModalResult } from '../../../../src/extensions/p2p-hub/modal/open-p2p-hub-modal';
+import {
+  buildHubModalFactory,
+  openP2pHubModal,
+  type P2pHubModalResult,
+} from '../../../../src/extensions/p2p-hub/modal/open-p2p-hub-modal';
 import { P2pHubState, type P2pHubStateDeps } from '../../../../src/extensions/p2p-hub/p2p-hub-state';
 import { HubRegistry, type HubRegistryEntry } from '../../../../src/extensions/p2p-hub/registry.util';
 import { PathUtil } from '../../../../src/utils/path.util';
@@ -92,15 +96,54 @@ describe('buildHubModalFactory', () => {
     expect(rendered).toContain('team-b (connected)');
   });
 
-  test('selecting "create new" closes the dialog with {action: "create"}, not a pushed text layer', () => {
+  test('creates a hub in a pushed text layer and refreshes the root list', async () => {
     const state = spawn('agent-a');
     const results: P2pHubModalResult[] = [];
-    const factory = buildHubModalFactory(state, []);
+    const factory = buildHubModalFactory(state, [], async () => registry.list());
     const dialog = factory(makeTui() as never, theme, keybindings, r => results.push(r), 'inline') as ModalDialog<P2pHubModalResult>;
+    dialog.focused = true;
 
-    // Only item is "create new" (no hubs registered).
     dialog.handleInput('\r');
-    expect(results).toEqual([{ action: 'create' }]);
+    for (const char of 'jkgq-hub') dialog.handleInput(char);
+    dialog.handleInput('\r');
+    await Bun.sleep(30);
+
+    expect(results).toEqual([]);
+    expect(state.getHubName()).toBe('jkgq-hub');
+    const rendered = dialog.render(60).join('\n');
+    expect(rendered).toContain('Current Hub: jkgq-hub (connected)');
+    expect(rendered).toContain('jkgq-hub (connected)');
+  });
+
+  test('Esc cancels create and duplicate errors remain inline', async () => {
+    const state = spawn('agent-a');
+    const factory = buildHubModalFactory(state, []);
+    const dialog = factory(makeTui() as never, theme, keybindings, () => undefined, 'inline') as ModalDialog<P2pHubModalResult>;
+
+    dialog.handleInput('\r');
+    dialog.handleInput('x');
+    dialog.handleInput('\x1b');
+    expect(state.isConnected()).toBe(false);
+    expect(dialog.render(60).join('\n')).toContain('create new');
+
+    const host = spawn('host-a');
+    await host.createHub('duplicate');
+    const entry = registry.read('duplicate');
+    if (!entry) throw new Error('missing entry');
+    const duplicateFactory = buildHubModalFactory(state, [entry]);
+    const duplicateDialog = duplicateFactory(
+      makeTui() as never,
+      theme,
+      keybindings,
+      () => undefined,
+      'inline',
+    ) as ModalDialog<P2pHubModalResult>;
+    duplicateDialog.handleInput('j');
+    duplicateDialog.handleInput('\r');
+    for (const char of 'duplicate') duplicateDialog.handleInput(char);
+    duplicateDialog.handleInput('\r');
+    await Bun.sleep(20);
+    expect(duplicateDialog.render(60).join('\n')).toContain('already exists');
   });
 
   test('vim navigation moves selection with j/k and Esc closes with {action: "close"}', () => {
@@ -115,13 +158,53 @@ describe('buildHubModalFactory', () => {
 
     dialog.handleInput('j');
     dialog.handleInput('j');
-    // Cursor should now be on "create new" (3rd row); confirm it.
+    // Cursor should now be on "create new" (3rd row); confirm pushes its layer.
     dialog.handleInput('\r');
-    expect(results).toEqual([{ action: 'create' }]);
+    expect(results).toEqual([]);
+    expect(dialog.render(60).join('\n')).toContain('Create New Hub');
 
     const dialog2 = factory(makeTui() as never, theme, keybindings, r => results.push(r), 'inline') as ModalDialog<P2pHubModalResult>;
     dialog2.handleInput('q');
     expect(results.at(-1)).toEqual({ action: 'close' });
+  });
+
+  test('selected styling moves independently from the connected marker', async () => {
+    const state = spawn('agent-a');
+    await state.createHub('team-a');
+    const connected = registry.read('team-a');
+    if (!connected) throw new Error('missing entry');
+    const other = { name: 'team-b', port: 2, hostPid: process.pid, createdAt: new Date().toISOString() };
+    const recordingTheme = {
+      fg: (color: string, text: string) => `[${color}]${text}[/${color}]`,
+      bold: (text: string) => text,
+    } as Theme;
+    const factory = buildHubModalFactory(state, [connected, other]);
+    const dialog = factory(makeTui() as never, recordingTheme, keybindings, () => undefined, 'inline') as ModalDialog<P2pHubModalResult>;
+
+    const first = dialog.render(80).join('\n');
+    expect(first).toContain('[accent]> [/accent][accent]team-a[/accent][success] (connected)[/success]');
+    dialog.handleInput('j');
+    const second = dialog.render(80).join('\n');
+    expect(second).toContain('  team-a[success] (connected)[/success]');
+    expect(second).toContain('[accent]> [/accent][accent]team-b[/accent]');
+  });
+
+  test('forwards inline and overlay layouts to modal presentation', async () => {
+    const state = spawn('agent-a');
+    const options: unknown[] = [];
+    const ctx = {
+      ui: {
+        custom: (_factory: unknown, value: unknown) => {
+          options.push(value);
+          return Promise.resolve({ action: 'close' });
+        },
+      },
+    };
+
+    await openP2pHubModal(ctx as never, state, registry, 'inline');
+    await openP2pHubModal(ctx as never, state, registry, 'overlay');
+    expect(options[0]).toBeUndefined();
+    expect(options[1]).toMatchObject({ overlay: true, overlayOptions: { anchor: 'center' } });
   });
 
   test('confirming a hub row pushes a detail layer instead of closing the dialog', () => {

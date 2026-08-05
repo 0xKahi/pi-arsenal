@@ -35,6 +35,7 @@ function renderMember(entry: P2pRosterEntry) {
   return {
     name: entry.identity.name,
     role: entry.role,
+    isSelf: entry.isSelf,
     model: entry.identity.model,
     status: entry.status ? FormatUtil.formatStatus(entry.status) : undefined,
     cwd: entry.identity.cwd,
@@ -44,7 +45,7 @@ function renderMember(entry: P2pRosterEntry) {
 }
 
 function renderLine(entry: P2pRosterEntry): string {
-  const marker = entry.role === 'you' ? ' (you)' : '';
+  const marker = entry.isSelf ? ' (you)' : '';
   const model = entry.identity.model ? `  ${entry.identity.model}` : '';
   const status = entry.status ? `  ${FormatUtil.formatStatus(entry.status)}` : '';
   const contextNumeric = entry.identity.context ? FormatUtil.formatContextNumeric(entry.identity.context) : '';

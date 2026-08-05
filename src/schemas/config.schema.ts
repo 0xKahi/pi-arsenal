@@ -12,6 +12,7 @@ export const ConfigSchema = z.object({
   }),
   p2p_hub: P2pHubConfigSchema.default({
     enabled: false,
+    layout: 'inline',
   }),
 });
 

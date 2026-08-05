@@ -15,6 +15,7 @@ export class HubDetailLayer implements ModalLayer {
   private lines: string[] = ['Loading...'];
   private connectedToThis = false;
   private busy = false;
+  private readonly unsubscribe: () => void;
 
   public constructor(
     private readonly theme: Theme,
@@ -23,30 +24,31 @@ export class HubDetailLayer implements ModalLayer {
     private readonly state: P2pHubState,
     private readonly onStateChange: () => void,
   ) {
+    this.unsubscribe = state.subscribe(() => tui.requestRender());
     void this.load();
   }
 
   private async load(): Promise<void> {
     this.connectedToThis = this.state.getHubName() === this.entry.name && this.state.isConnected();
-    if (this.connectedToThis) {
-      this.renderRoster(this.state.getRoster());
-    } else {
+    if (!this.connectedToThis) {
       const snapshot = await this.state.peek(this.entry);
       if (!snapshot) {
         this.lines = [this.theme.fg('error', 'Hub is unreachable.')];
       } else {
         const roster: P2pRosterEntry[] = [];
-        if (snapshot.host) roster.push({ identity: snapshot.host, status: snapshot.statuses[snapshot.host.name], role: 'host' });
-        for (const client of snapshot.clients) roster.push({ identity: client, status: snapshot.statuses[client.name], role: 'client' });
-        this.renderRoster(roster);
+        if (snapshot.host) roster.push({ identity: snapshot.host, status: snapshot.statuses[snapshot.host.name], role: 'host', isSelf: false });
+        for (const client of snapshot.clients) {
+          roster.push({ identity: client, status: snapshot.statuses[client.name], role: 'client', isSelf: false });
+        }
+        this.lines = this.rosterLines(roster);
       }
     }
     this.tui.requestRender();
   }
 
-  private renderRoster(roster: P2pRosterEntry[]): void {
+  private rosterLines(roster: P2pRosterEntry[]): string[] {
     const lines: string[] = [];
-    const host = roster.find(r => r.role === 'host' || r.role === 'you');
+    const host = roster.find(r => r.role === 'host');
     const clients = roster.filter(r => r !== host);
 
     lines.push(this.theme.fg('accent', `Hub: ${this.entry.name}`), '');
@@ -58,7 +60,7 @@ export class HubDetailLayer implements ModalLayer {
     if (clients.length === 0) lines.push('  (none)');
     for (const client of clients) lines.push(...this.renderMember(client.identity, client.status));
 
-    this.lines = lines;
+    return lines;
   }
 
   private renderMember(identity: P2pIdentity, status: P2pStatus | undefined): string[] {
@@ -73,7 +75,7 @@ export class HubDetailLayer implements ModalLayer {
 
   public hints(): Hint[] {
     if (this.busy) return [['...', 'Working']];
-    return [['Enter', this.connectedToThis ? 'Disconnect' : 'Connect']];
+    return [['Enter', this.isConnectedToThis() ? 'Disconnect' : 'Connect']];
   }
 
   public handleInput(_data: string): void {
@@ -90,7 +92,7 @@ export class HubDetailLayer implements ModalLayer {
   }
 
   private async toggleConnection(): Promise<void> {
-    if (this.connectedToThis) {
+    if (this.isConnectedToThis()) {
       this.state.disconnect('manual');
     } else {
       await this.state.joinHub(this.entry);
@@ -100,10 +102,19 @@ export class HubDetailLayer implements ModalLayer {
   }
 
   public render(width: number, height: number | undefined): string[] {
-    const rendered = this.lines.map(line => fitLine(line, width));
+    const lines = this.isConnectedToThis() ? this.rosterLines(this.state.getRoster()) : this.lines;
+    const rendered = lines.map(line => fitLine(line, width));
     if (height === undefined) return rendered;
     const bounded = rendered.slice(0, height);
     while (bounded.length < height) bounded.push('');
     return bounded;
+  }
+
+  public dispose(): void {
+    this.unsubscribe();
+  }
+
+  private isConnectedToThis(): boolean {
+    return this.state.getHubName() === this.entry.name && this.state.isConnected();
   }
 }

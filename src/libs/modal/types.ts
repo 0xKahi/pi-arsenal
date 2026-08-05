@@ -27,19 +27,29 @@ export interface NavigationScheme {
   hints(stepLabel?: string): Hint[];
 }
 
+/** Input ownership policy for a pushed layer. */
+export type ModalLayerInputPolicy = 'navigation-first' | 'text-focused';
+
 /** Content layer pushed above a tab, for example a scrollable preview. */
 export interface ModalLayer {
+  /** Defaults to navigation-first. Text-focused layers receive raw keys except Esc. */
+  readonly inputPolicy?: ModalLayerInputPolicy;
+  /** Optional focus plumbing for layers that contain a cursor-bearing input. */
+  focused?: boolean;
   render(width: number, height: number | undefined): string[];
   handleInput(data: string): void;
   handleNavigation(action: NavigationAction): void;
   hints(): Hint[];
   invalidate?(): void;
+  dispose?(): void;
 }
 
 /** Per-tab services provided by the dialog shell at attachment time. */
 export interface ModalTabContext {
   /** Push a layer above this tab; dismissal pops it before closing the dialog. */
   pushLayer(layer: ModalLayer): void;
+  /** Pop this tab's active layer without completing the dialog. */
+  popLayer(): void;
 }
 
 /**

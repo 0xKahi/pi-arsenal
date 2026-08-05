@@ -21,3 +21,5 @@ export const PROMOTION_BASE_DELAY_MS = 500;
 export const PROMOTION_JITTER_MS = 1500;
 export const RECONNECT_RETRY_MS = 2000;
 export const PEEK_TIMEOUT_MS = 3000;
+/** Maximum time an open client transport may wait for an authoritative welcome. */
+export const WELCOME_TIMEOUT_MS = 3000;

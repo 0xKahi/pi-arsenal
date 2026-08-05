@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { ConfigLoader } from '../../config/config-loader';
+import { ConfigLoader, type ConfigLoadResult } from '../../config/config-loader';
 import { COMMAND_NAME, PI_VIM_KEY_EVENT_ID } from './constants';
 import { resolveP2pIdentity } from './identity.util';
 import { openP2pHubModal } from './modal/open-p2p-hub-modal';
@@ -10,8 +10,12 @@ import { createP2pLsTool } from './tools/p2p-ls.tool';
 import { createP2pSendTool } from './tools/p2p-send.tool';
 import { P2PWidgetController } from './widget/status-widget-controller';
 
+function loadP2pHubConfig(ctx: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted'>): ConfigLoadResult {
+  return ConfigLoader.load(ctx);
+}
+
 function isP2pHubEnabled(ctx: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted'>): boolean {
-  const result = ConfigLoader.load(ctx);
+  const result = loadP2pHubConfig(ctx);
   return result.success && result.config.p2p_hub.enabled;
 }
 
@@ -126,17 +130,12 @@ export function activateP2pHub(pi: ExtensionAPI, initialCtx: ExtensionContext): 
       ctx.ui.notify(`/${COMMAND_NAME} requires TUI mode.`, 'warning');
       return;
     }
-    const result = await openP2pHubModal(ctx, state, registry);
-    if (result.action !== 'create') return;
-
-    const name = await ctx.ui.input('Create New Hub', 'hub name');
-    const trimmed = name?.trim();
-    if (!trimmed) return;
-
-    const created = await state.createHub(trimmed);
-    if (!created.success) {
-      ctx.ui.notify(`p2p-hub: ${created.error}`, 'error');
+    const config = loadP2pHubConfig(ctx);
+    if (!config.success) {
+      ctx.ui.notify(`p2p-hub: ${config.error}`, 'error');
+      return;
     }
+    await openP2pHubModal(ctx, state, registry, config.config.p2p_hub.layout);
   };
 
   pi.registerCommand(COMMAND_NAME, {

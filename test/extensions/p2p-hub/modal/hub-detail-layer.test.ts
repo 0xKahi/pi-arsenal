@@ -101,7 +101,38 @@ describe('HubDetailLayer', () => {
     expect(layer.render(60, undefined).join('\n')).toContain('host-a');
   });
 
-  test('confirm connects to an unjoined hub', async () => {
+  test('connected detail updates live for joins, status changes, and leaves without reopening', async () => {
+    const host = spawn('host-a');
+    await host.createHub('live-hub');
+    const entry = registry.read('live-hub');
+    if (!entry) throw new Error('missing entry');
+    const clientA = spawn('client-a');
+    await clientA.joinHub(entry);
+
+    const tui = makeTui();
+    const layer = new HubDetailLayer(theme, tui as never, entry, host, () => {});
+    await Bun.sleep(10);
+    expect(layer.render(60, undefined).join('\n')).toContain('Clients (1):');
+    const priorRenders = tui.renders;
+
+    const clientB = spawn('client-b');
+    await clientB.joinHub(entry);
+    expect(tui.renders).toBeGreaterThan(priorRenders);
+    expect(layer.render(60, undefined).join('\n')).toContain('Clients (2):');
+    expect(layer.render(60, undefined).join('\n')).toContain('client-b');
+
+    clientB.setActiveTool('bash');
+    await Bun.sleep(10);
+    expect(layer.render(60, undefined).join('\n')).toContain('tool:bash');
+
+    clientB.disconnect('manual');
+    await Bun.sleep(10);
+    expect(layer.render(60, undefined).join('\n')).toContain('Clients (1):');
+    expect(layer.render(60, undefined).join('\n')).not.toContain('client-b');
+    layer.dispose();
+  });
+
+  test('confirm connects to an unjoined hub with authoritative grouping immediately', async () => {
     const host = spawn('host-a');
     await host.createHub('connect-hub');
     const entry = registry.read('connect-hub');
@@ -119,6 +150,10 @@ describe('HubDetailLayer', () => {
     expect(client.isConnected()).toBe(true);
     expect(client.getHubName()).toBe('connect-hub');
     expect(layer.hints()).toEqual([['Enter', 'Disconnect']]);
+    const rendered = layer.render(60, undefined).join('\n');
+    expect(rendered.indexOf('Host:')).toBeLessThan(rendered.indexOf('host-a'));
+    expect(rendered).toContain('Clients (1):');
+    expect(rendered).toContain('client-a');
   });
 
   test('confirm disconnects from the currently connected hub', async () => {

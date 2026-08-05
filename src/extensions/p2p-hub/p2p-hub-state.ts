@@ -12,6 +12,7 @@ import {
   PROMPT_HARD_CEILING_MS,
   PROMPT_INACTIVITY_MS,
   RECONNECT_RETRY_MS,
+  WELCOME_TIMEOUT_MS,
 } from './constants';
 import {
   type ChatMsg,
@@ -36,7 +37,8 @@ export type P2pRole = 'host' | 'client' | 'disconnected';
 export interface P2pRosterEntry {
   identity: P2pIdentity;
   status: P2pStatus | undefined;
-  role: 'host' | 'client' | 'you';
+  role: 'host' | 'client';
+  isSelf: boolean;
 }
 
 export interface P2pHubStateDeps {
@@ -87,6 +89,7 @@ export class P2pHubState {
 
   // Client-side
   private ws: WebSocket | null = null;
+  private clientHostName: string | undefined;
   private members = new Map<string, P2pIdentity>();
   private statuses = new Map<string, P2pStatus>();
 
@@ -109,9 +112,15 @@ export class P2pHubState {
   // Promotion
   private promotionTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
+  private readonly changeListeners = new Set<() => void>();
 
   public constructor(private readonly deps: P2pHubStateDeps) {
     this.selfName = deps.identity.name;
+    const onChange = deps.onChange;
+    deps.onChange = () => {
+      onChange();
+      for (const listener of this.changeListeners) listener();
+    };
   }
 
   // ── Public accessors ────────────────────────────────────────────────────
@@ -133,22 +142,36 @@ export class P2pHubState {
   }
 
   public getRoster(): P2pRosterEntry[] {
-    const roster: P2pRosterEntry[] = [{ identity: this.selfIdentity(), status: this.deriveStatus(), role: this.role === 'host' ? 'host' : 'you' }];
+    if (this.role === 'disconnected') return [];
+    const roster: P2pRosterEntry[] = [
+      { identity: this.selfIdentity(), status: this.deriveStatus(), role: this.role === 'host' ? 'host' : 'client', isSelf: true },
+    ];
     if (this.role === 'host') {
       for (const [name, identity] of this.hubIdentities) {
-        roster.push({ identity, status: this.hubStatuses.get(name), role: 'client' });
+        roster.push({ identity, status: this.hubStatuses.get(name), role: 'client', isSelf: false });
       }
-    } else if (this.role === 'client') {
+    } else {
       for (const [name, identity] of this.members) {
-        roster.push({ identity, status: this.statuses.get(name), role: 'host' });
+        roster.push({
+          identity,
+          status: this.statuses.get(name),
+          role: name === this.clientHostName ? 'host' : 'client',
+          isSelf: false,
+        });
       }
     }
     return roster;
   }
 
+  public subscribe(listener: () => void): () => void {
+    this.changeListeners.add(listener);
+    return () => this.changeListeners.delete(listener);
+  }
+
   public dispose(): void {
     this.disposed = true;
     this.disconnect('manual');
+    this.changeListeners.clear();
   }
 
   /**
@@ -288,7 +311,7 @@ export class P2pHubState {
       // Only the host removes the registry entry on a clean, manual shutdown.
       // Losing clients will race to promote instead of racing to delete.
       if (priorHubName) this.deps.registry.remove(priorHubName);
-    } else if (priorRole === 'client' && this.ws) {
+    } else if (this.ws) {
       try {
         this.ws.close();
       } catch {
@@ -300,6 +323,7 @@ export class P2pHubState {
     this.role = 'disconnected';
     this.hubName = undefined;
     this.hubPort = undefined;
+    this.clientHostName = undefined;
     this.members.clear();
     this.statuses.clear();
     this.lastPushedKind = null;
@@ -404,8 +428,9 @@ export class P2pHubState {
 
         const welcome: WelcomeMsg = {
           type: 'welcome',
-          name: clientName,
-          members: [this.selfIdentity(), ...Array.from(this.hubIdentities.values()).filter(m => m.name !== clientName)],
+          assignedName: clientName,
+          host: this.selfIdentity(),
+          clients: Array.from(this.hubIdentities.values()).filter(member => member.name !== clientName),
           statuses: { [this.selfName]: this.deriveStatus(), ...this.snapshotStatuses(clientName) },
         };
         clientWs.send(JSON.stringify(welcome));
@@ -523,19 +548,45 @@ export class P2pHubState {
   private connectAsClient(hubName: string, port: number): Promise<JoinHubResult> {
     return new Promise(resolve => {
       const socket = new WebSocket(`ws://127.0.0.1:${port}`);
-      let resolved = false;
+      let settled = false;
+      let welcomed = false;
+
+      const resetPartialState = () => {
+        if (this.ws === socket) this.ws = null;
+        this.role = 'disconnected';
+        this.hubName = undefined;
+        this.hubPort = undefined;
+        this.clientHostName = undefined;
+        this.members.clear();
+        this.statuses.clear();
+        this.deps.onChange();
+      };
+      const finishFailure = (error: string) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(welcomeTimer);
+        resetPartialState();
+        try {
+          socket.close();
+        } catch {
+          // best-effort
+        }
+        resolve({ success: false, error });
+      };
+      const finishSuccess = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(welcomeTimer);
+        resolve({ success: true, hubName });
+      };
+      const welcomeTimer = setTimeout(() => finishFailure('welcome handshake timed out'), WELCOME_TIMEOUT_MS);
 
       socket.on('open', () => {
         if (this.disposed) {
-          socket.close();
-          if (!resolved) {
-            resolved = true;
-            resolve({ success: false, error: 'disposed' });
-          }
+          finishFailure('disposed');
           return;
         }
         this.ws = socket;
-        this.role = 'client';
         this.hubName = hubName;
         this.hubPort = port;
         const register: RegisterMsg = {
@@ -547,24 +598,42 @@ export class P2pHubState {
           context: this.deps.getContextSnapshot(),
         };
         socket.send(JSON.stringify(register));
-        resolved = true;
-        resolve({ success: true, hubName });
       });
 
       socket.on('message', raw => {
-        if (this.disposed) return;
+        if (this.disposed) {
+          finishFailure('disposed');
+          return;
+        }
         const msg = safeParseP2pMessage(raw.toString());
+        if (!welcomed) {
+          if (msg?.type !== 'welcome') {
+            finishFailure('invalid welcome handshake');
+            return;
+          }
+          welcomed = true;
+          this.handleIncoming(msg);
+          finishSuccess();
+          return;
+        }
         if (msg) this.handleIncoming(msg);
       });
 
       socket.on('close', () => {
+        if (!welcomed) {
+          finishFailure(this.disposed ? 'disposed' : 'connection closed before welcome');
+          return;
+        }
         const wasClient = this.role === 'client';
-        this.ws = null;
+        if (this.ws === socket) this.ws = null;
         if (this.disposed) return;
         if (wasClient) {
           const lostHubName = this.hubName;
           const lostPort = this.hubPort;
           this.role = 'disconnected';
+          this.hubName = undefined;
+          this.hubPort = undefined;
+          this.clientHostName = undefined;
           this.members.clear();
           this.statuses.clear();
           this.deps.onChange();
@@ -575,13 +644,7 @@ export class P2pHubState {
         }
       });
 
-      socket.on('error', () => {
-        if (!resolved) {
-          resolved = true;
-          resolve({ success: false, error: 'connection failed' });
-        }
-        socket.close();
-      });
+      socket.on('error', () => finishFailure('connection failed'));
     });
   }
 
@@ -649,13 +712,14 @@ export class P2pHubState {
   private handleIncoming(msg: P2pMessage): void {
     switch (msg.type) {
       case 'welcome': {
-        this.selfName = msg.name;
+        this.selfName = msg.assignedName;
+        this.role = 'client';
+        this.clientHostName = msg.host.name;
         this.members.clear();
         this.statuses.clear();
-        for (const identity of msg.members) this.members.set(identity.name, identity);
-        if (msg.statuses) {
-          for (const [name, status] of Object.entries(msg.statuses)) this.statuses.set(name, status);
-        }
+        this.members.set(msg.host.name, msg.host);
+        for (const identity of msg.clients) this.members.set(identity.name, identity);
+        for (const [name, status] of Object.entries(msg.statuses)) this.statuses.set(name, status);
         this.deps.onChange();
         this.deps.notify(`Joined hub "${this.hubName}" as "${this.selfName}"`, 'info');
         this.pushStatus(true);

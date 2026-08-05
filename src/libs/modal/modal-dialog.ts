@@ -5,12 +5,14 @@
  * implement content. See `types.ts` for the tab/layer/scheme contracts.
  *
  * Input routing order:
- *   1. Tab/Shift+Tab cycles tabs (wrapping, scheme reset).
- *   2. The navigation scheme maps a key to a semantic action; `dismiss` pops
+ *   1. A text-focused top layer receives every raw key except shell-reserved
+ *      Esc, which pops the layer.
+ *   2. Tab/Shift+Tab cycles tabs (wrapping, scheme reset).
+ *   3. The navigation scheme maps a key to a semantic action; `dismiss` pops
  *      the active tab's top layer, or completes the dialog with the cancel
  *      value when no layer is open. Other actions go to the top layer, or the
  *      active tab when no layer is open.
- *   3. Unhandled raw keys go to the top layer, else the filter input, else
+ *   4. Unhandled raw keys go to the top layer, else the filter input, else
  *      the active tab.
  */
 import type { KeybindingsManager, Theme } from '@earendil-works/pi-coding-agent';
@@ -75,6 +77,7 @@ export class ModalDialog<TResult> implements Component, Focusable {
     for (const tab of options.tabs) {
       tab.attach?.({
         pushLayer: layer => this.pushLayer(tab, layer),
+        popLayer: () => this.popLayer(tab),
       });
     }
 
@@ -93,6 +96,7 @@ export class ModalDialog<TResult> implements Component, Focusable {
   public set focused(value: boolean) {
     this._focused = value;
     if (this.filterInput) this.filterInput.focused = value;
+    this.syncLayerFocus();
   }
 
   public get activeTab(): ModalTab {
@@ -119,6 +123,14 @@ export class ModalDialog<TResult> implements Component, Focusable {
   }
 
   public handleInput(data: string): void {
+    const layer = this.topLayer();
+    if (layer?.inputPolicy === 'text-focused') {
+      if (matchesKey(data, Key.escape)) this.dismiss();
+      else layer.handleInput(data);
+      this.tui.requestRender();
+      return;
+    }
+
     if (this.options.tabs.length > 1) {
       if (matchesKey(data, Key.shift('tab'))) {
         this.switchTab(-1);
@@ -169,27 +181,44 @@ export class ModalDialog<TResult> implements Component, Focusable {
   // === Input routing internals ===
 
   private switchTab(direction: -1 | 1): void {
+    const previousLayer = this.topLayer();
     const count = this.options.tabs.length;
     this.activeTabIndex = (((this.activeTabIndex + direction) % count) + count) % count;
+    if (previousLayer?.focused !== undefined) previousLayer.focused = false;
+    this.syncLayerFocus();
     this.scheme.reset();
     this.tui.requestRender();
   }
 
   private dismiss(): void {
-    const stack = this.layerStacks.get(this.activeTab);
-    if (stack !== undefined && stack.length > 0) {
-      stack.pop();
-      this.scheme.reset();
-      return;
-    }
+    if (this.popLayer(this.activeTab)) return;
     this.options.onComplete(this.options.cancelValue);
+  }
+
+  private popLayer(tab: ModalTab): boolean {
+    const stack = this.layerStacks.get(tab);
+    if (stack === undefined || stack.length === 0) return false;
+    const popped = stack.pop();
+    if (popped?.focused !== undefined) popped.focused = false;
+    popped?.dispose?.();
+    this.syncLayerFocus();
+    this.scheme.reset();
+    return true;
   }
 
   private pushLayer(tab: ModalTab, layer: ModalLayer): void {
     const stack = this.layerStacks.get(tab) ?? [];
+    const previous = stack.at(-1);
+    if (previous?.focused !== undefined) previous.focused = false;
     stack.push(layer);
     this.layerStacks.set(tab, stack);
+    this.syncLayerFocus();
     this.scheme.reset();
+  }
+
+  private syncLayerFocus(): void {
+    const layer = this.topLayer();
+    if (layer?.focused !== undefined) layer.focused = this._focused;
   }
 
   private topLayer(): ModalLayer | undefined {

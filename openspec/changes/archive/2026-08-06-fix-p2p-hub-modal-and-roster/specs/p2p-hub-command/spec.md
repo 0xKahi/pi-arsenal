@@ -1,24 +1,4 @@
-## Purpose
-
-Defines the `/p2p-hub` command and its modal interface: the sole user-facing surface for discovering, inspecting, creating, connecting to, and disconnecting from hubs.
-
-## Requirements
-
-### Requirement: /p2p-hub opens the hub modal
-
-The system SHALL provide a `/p2p-hub` command that opens a modal showing the currently connected hub (if any) and the list of available hubs from the registry, plus a `create new` entry. Hub connection and disconnection SHALL be performed exclusively through this modal (no auto-connect at startup). The modal SHALL also open in response to the extension's vim key event (`PI_VIM_KEY_EVENT_ID`).
-
-#### Scenario: Opening the modal while connected
-- **WHEN** the user runs `/p2p-hub` while connected to hub "frontend"
-- **THEN** the modal shows "frontend" marked as the current/connected hub and lists other available hubs and the `create new` entry
-
-#### Scenario: Opening via vim key event
-- **WHEN** the `PI_VIM_KEY_EVENT_ID` event is emitted while the extension is enabled
-- **THEN** the hub modal opens exactly as it does for `/p2p-hub`
-
-#### Scenario: Stale hubs excluded
-- **WHEN** the modal opens and a registry entry fails liveness validation
-- **THEN** that hub is not shown in the available list
+## ADDED Requirements
 
 ### Requirement: Configured modal presentation
 
@@ -39,6 +19,8 @@ The hub list SHALL visually distinguish exactly the currently navigated option u
 #### Scenario: Moving list selection
 - **WHEN** the user moves from one hub-list option to another
 - **THEN** the accent cursor and selected text move to the newly selected option and the previous option returns to non-selected styling
+
+## MODIFIED Requirements
 
 ### Requirement: Hub detail view via peek
 
@@ -82,7 +64,7 @@ The `create new` entry SHALL push a text-focused view inside the current custom 
 
 ### Requirement: Vim navigation
 
-Outside a text-focused view, the modal SHALL support vim-style navigation (j/k and arrows for movement, Enter to confirm, Esc/q to dismiss or pop back a view) consistent with the vendored modal library's vim scheme. A text-focused view SHALL receive raw input before the Vim scheme, with Esc reserved for popping the view. Dismissing from a pushed view SHALL return to the hub list; dismissing from the hub list SHALL close the modal.
+Outside a text-focused view, the modal SHALL support Vim-style navigation (`j`/`k` and arrows for movement, Enter to confirm, and Esc/`q` to dismiss or pop back a view) consistent with the vendored modal library's Vim scheme. A text-focused view SHALL receive raw input before the Vim scheme, with Esc reserved for popping the view. Dismissing from a non-text pushed view SHALL return to the hub list; dismissing from the hub list SHALL close the modal.
 
 #### Scenario: Navigating and backing out
 - **WHEN** the user presses `j` twice on the hub list, Enter to open a detail view, then Esc

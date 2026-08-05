@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { WebSocketServer } from 'ws';
 import { P2pHubState, type P2pHubStateDeps } from '../../../src/extensions/p2p-hub/p2p-hub-state';
 import { HubRegistry } from '../../../src/extensions/p2p-hub/registry.util';
 import { PathUtil } from '../../../src/utils/path.util';
@@ -73,19 +74,56 @@ describe('P2pHubState', () => {
     expect(join.success).toBe(true);
     expect(client.getRole()).toBe('client');
 
-    await Bun.sleep(20);
-
-    const hostRoster = host
-      .getRoster()
-      .map(r => r.identity.name)
-      .sort();
-    const clientRoster = client
-      .getRoster()
-      .map(r => r.identity.name)
-      .sort();
-    expect(hostRoster).toEqual(['client-a', 'host-a']);
-    expect(clientRoster).toEqual(['client-a', 'host-a']);
+    const hostRoster = host.getRoster();
+    const clientRoster = client.getRoster();
+    expect(hostRoster.map(r => r.identity.name).sort()).toEqual(['client-a', 'host-a']);
+    expect(clientRoster.map(r => r.identity.name).sort()).toEqual(['client-a', 'host-a']);
+    expect(hostRoster.find(r => r.identity.name === 'host-a')).toMatchObject({ role: 'host', isSelf: true });
+    expect(hostRoster.find(r => r.identity.name === 'client-a')).toMatchObject({ role: 'client', isSelf: false });
+    expect(clientRoster.find(r => r.identity.name === 'host-a')).toMatchObject({ role: 'host', isSelf: false });
+    expect(clientRoster.find(r => r.identity.name === 'client-a')).toMatchObject({ role: 'client', isSelf: true });
   });
+
+  test('a joining client immediately receives the host and all existing clients with explicit roles', async () => {
+    const host = spawn('host-a');
+    await host.createHub('topology-hub');
+    const entry = registry.read('topology-hub');
+    if (!entry) throw new Error('missing entry');
+    const clientA = spawn('client-a');
+    await clientA.joinHub(entry);
+    const clientB = spawn('client-b');
+    const result = await clientB.joinHub(entry);
+
+    expect(result.success).toBe(true);
+    expect(clientB.getRoster().map(member => ({ name: member.identity.name, role: member.role, isSelf: member.isSelf }))).toEqual([
+      { name: 'client-b', role: 'client', isSelf: true },
+      { name: 'host-a', role: 'host', isSelf: false },
+      { name: 'client-a', role: 'client', isSelf: false },
+    ]);
+  });
+
+  test('join fails cleanly when an open transport never sends welcome', async () => {
+    const server = new WebSocketServer({ port: 0, host: '127.0.0.1' });
+    await new Promise<void>((resolve, reject) => {
+      server.once('listening', () => resolve());
+      server.once('error', reject);
+    });
+    const address = server.address();
+    if (typeof address !== 'object' || address === null) throw new Error('missing server address');
+    const client = spawn('client-a');
+    const result = await client.joinHub({
+      name: 'silent-hub',
+      port: address.port,
+      hostPid: process.pid,
+      createdAt: new Date().toISOString(),
+    });
+
+    expect(result).toEqual({ success: false, error: 'welcome handshake timed out' });
+    expect(client.getRole()).toBe('disconnected');
+    expect(client.getHubName()).toBeUndefined();
+    expect(client.getRoster()).toEqual([]);
+    await new Promise<void>(resolve => server.close(() => resolve()));
+  }, 5000);
 
   test('hub deduplicates a colliding member name', async () => {
     const host = spawn('host-a');

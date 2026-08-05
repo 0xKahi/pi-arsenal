@@ -107,15 +107,31 @@ describe('p2p-hub tools', () => {
     expect(result.details.error).toBe('not_connected');
   });
 
-  test('p2p_ls lists members with role, model, and context usage', async () => {
-    const { client } = await connectedPair('ls-hub');
-    const tool = createP2pLsTool(client);
-    const result = await tool.execute('id', {}, undefined, undefined, undefined as never);
-    const text = result.content[0]?.type === 'text' ? result.content[0].text : '';
-    expect(text).toContain('host-a');
-    expect(text).toContain('client-a');
-    expect(text).toContain('test-model');
-    expect(text).toContain('%');
+  test('p2p_ls reports actual roles and separate self markers for clients and hosts', async () => {
+    const { host, client } = await connectedPair('ls-hub');
+    const clientResult = await createP2pLsTool(client).execute('id', {}, undefined, undefined, undefined as never);
+    const clientText = clientResult.content[0]?.type === 'text' ? clientResult.content[0].text : '';
+    expect(clientText).toContain('host-a [host]');
+    expect(clientText).toContain('client-a (you) [client]');
+    expect(clientText).toContain('test-model');
+    expect(clientText).toContain('%');
+    expect(clientResult.details.members).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'host-a', role: 'host', isSelf: false }),
+        expect.objectContaining({ name: 'client-a', role: 'client', isSelf: true }),
+      ]),
+    );
+
+    const hostResult = await createP2pLsTool(host).execute('id', {}, undefined, undefined, undefined as never);
+    const hostText = hostResult.content[0]?.type === 'text' ? hostResult.content[0].text : '';
+    expect(hostText).toContain('host-a (you) [host]');
+    expect(hostText).toContain('client-a [client]');
+    expect(hostResult.details.members).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'host-a', role: 'host', isSelf: true }),
+        expect.objectContaining({ name: 'client-a', role: 'client', isSelf: false }),
+      ]),
+    );
   });
 
   test('p2p_ls returns not-connected error when disconnected', async () => {

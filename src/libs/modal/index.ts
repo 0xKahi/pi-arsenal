@@ -27,4 +27,13 @@ export {
   type Viewport,
   wrapDescriptionLines,
 } from './text';
-export type { Hint, ModalLayer, ModalTab, ModalTabContext, NavigationAction, NavigationResult, NavigationScheme } from './types';
+export type {
+  Hint,
+  ModalLayer,
+  ModalLayerInputPolicy,
+  ModalTab,
+  ModalTabContext,
+  NavigationAction,
+  NavigationResult,
+  NavigationScheme,
+} from './types';
