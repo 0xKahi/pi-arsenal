@@ -78,6 +78,10 @@ export class ConfigLoader {
         ...base.tmux_popup,
         ...override.tmux_popup,
       },
+      p2p_hub: {
+        ...base.p2p_hub,
+        ...override.p2p_hub,
+      },
     };
   }
 

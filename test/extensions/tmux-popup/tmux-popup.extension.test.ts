@@ -33,7 +33,7 @@ describe('registerTmuxPopup', () => {
       ConfigLoader: {
         load: (): ConfigLoadResult => ({
           success: true,
-          config: { tmux_popup: { enabled: false, width: 50, height: 50, fileCommand: 'nvim' } },
+          config: { tmux_popup: { enabled: false, width: 50, height: 50, fileCommand: 'nvim' }, p2p_hub: { enabled: false, layout: 'inline' } },
         }),
       },
     }));
@@ -47,7 +47,7 @@ describe('registerTmuxPopup', () => {
       ConfigLoader: {
         load: (): ConfigLoadResult => ({
           success: true,
-          config: { tmux_popup: { enabled: true, width: 50, height: 50, fileCommand: 'nvim' } },
+          config: { tmux_popup: { enabled: true, width: 50, height: 50, fileCommand: 'nvim' }, p2p_hub: { enabled: false, layout: 'inline' } },
         }),
       },
     }));
@@ -81,7 +81,7 @@ describe('registerTmuxPopup', () => {
       ConfigLoader: {
         load: (): ConfigLoadResult => ({
           success: true,
-          config: { tmux_popup: { enabled: true, width: 50, height: 50, fileCommand: 'nvim' } },
+          config: { tmux_popup: { enabled: true, width: 50, height: 50, fileCommand: 'nvim' }, p2p_hub: { enabled: false, layout: 'inline' } },
         }),
       },
     }));

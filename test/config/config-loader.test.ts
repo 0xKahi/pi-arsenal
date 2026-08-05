@@ -41,6 +41,7 @@ describe('ConfigLoader', () => {
       height: 50,
       fileCommand: 'nvim',
     });
+    expect(result.config.p2p_hub).toEqual({ enabled: false, layout: 'inline' });
   });
 
   it('applies global configuration overrides', () => {
@@ -55,6 +56,27 @@ describe('ConfigLoader', () => {
       height: 50,
       fileCommand: 'nvim',
     });
+  });
+
+  it('layers p2p-hub layout project configuration over global', () => {
+    writeFileSync(globalPath, JSON.stringify({ p2p_hub: { enabled: false, layout: 'inline' } }));
+    writeFileSync(projectPath, JSON.stringify({ p2p_hub: { enabled: true, layout: 'overlay' } }));
+
+    const result = ConfigLoader.load(createCtx(true, tmpDir), createResolver(globalPath, projectPath));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.config.p2p_hub).toEqual({ enabled: true, layout: 'overlay' });
+  });
+
+  it('rejects an invalid p2p-hub layout', () => {
+    writeFileSync(globalPath, JSON.stringify({ p2p_hub: { layout: 'floating' } }));
+
+    const result = ConfigLoader.load(createCtx(false, tmpDir), createResolver(globalPath));
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error).toContain('layout');
+    expect(result.error).toContain('inline');
+    expect(result.error).toContain('overlay');
   });
 
   it('fails when dimensions are out of bounds', () => {
