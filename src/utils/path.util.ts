@@ -15,6 +15,7 @@ export type FileSearchResult = {
 };
 
 type FindConfigInput = { type: 'global' } | { type: 'project'; cwd: string };
+type FindArsenalConfigInput = { type: 'global'; path: string } | { type: 'project'; cwd: string; path: string };
 
 export class PathUtil {
   /**
@@ -52,6 +53,17 @@ export class PathUtil {
       }
       case 'project': {
         return PathUtil.findFile(PathUtil.getExtensionConfig([input.cwd, '.pi']));
+      }
+    }
+  }
+
+  static findArsenalConfig(input: FindArsenalConfigInput): FileSearchResult {
+    switch (input.type) {
+      case 'global': {
+        return PathUtil.findFile(path.join(homedir(), '.arsenal', input.path));
+      }
+      case 'project': {
+        return PathUtil.findFile(path.join(input.cwd, '.arsenal', input.path));
       }
     }
   }

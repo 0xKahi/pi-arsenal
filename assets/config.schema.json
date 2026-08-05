@@ -38,6 +38,18 @@
           "type": "string"
         }
       }
+    },
+    "p2p_hub": {
+      "default": {
+        "enabled": false
+      },
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        }
+      }
     }
   }
 }
