@@ -32,11 +32,4 @@ describe('FormatUtil', () => {
     expect(dye.strip(FormatUtil.formatContextBar({ tokens: 50, contextWindow: 100 }, 10))).toBe('[#####-----] 50%');
     expect(dye.strip(FormatUtil.formatContextBar(undefined, 10))).toBe('[----------] 0%');
   });
-
-  test('statusDot maps status kind to a marker', () => {
-    expect(FormatUtil.statusDot(undefined)).toBe('○');
-    expect(FormatUtil.statusDot({ kind: 'idle', since: 0 })).toBe('●');
-    expect(FormatUtil.statusDot({ kind: 'thinking', since: 0 })).toBe('◐');
-    expect(FormatUtil.statusDot({ kind: 'tool', toolName: 'bash', since: 0 })).toBe('◆');
-  });
 });

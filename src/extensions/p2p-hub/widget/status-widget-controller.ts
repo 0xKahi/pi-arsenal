@@ -180,7 +180,7 @@ export class P2PWidgetController {
     const dot = FormatUtil.statusDot(entry.status);
     if (!entry.status) return theme.fg('dim', dot);
     if (entry.status.kind === 'idle') return dye.colorize(dot, { fg: 'green' });
-    if (entry.status.kind === 'thinking') return theme.fg('warning', dot);
+    if (entry.status.kind === 'thinking') return dye.colorize(dot, { fg: 'yellow' });
     return theme.fg('accent', dot);
   }
 }

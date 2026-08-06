@@ -47,7 +47,7 @@ export class FormatUtil {
   static statusDot(status: P2pStatus | undefined): string {
     if (!status) return '○';
     if (status.kind === 'idle') return '●';
-    if (status.kind === 'thinking') return '◐';
+    if (status.kind === 'thinking') return '●';
     return '◆';
   }
 }
