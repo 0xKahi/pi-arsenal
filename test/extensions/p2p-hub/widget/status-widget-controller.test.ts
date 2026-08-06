@@ -2,13 +2,14 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { dye } from '@0xkahi/cli-dye';
 import type { Theme } from '@earendil-works/pi-coding-agent';
 import { visibleWidth } from '@earendil-works/pi-tui';
 import { STATUS_WIDGET_KEY } from '../../../../src/extensions/p2p-hub/constants';
 import { P2pHubState, type P2pHubStateDeps } from '../../../../src/extensions/p2p-hub/p2p-hub-state';
 import { HubRegistry } from '../../../../src/extensions/p2p-hub/registry.util';
-import { PathUtil } from '../../../../src/utils/path.util';
 import { P2PWidgetController } from '../../../../src/extensions/p2p-hub/widget/status-widget-controller';
+import { PathUtil } from '../../../../src/utils/path.util';
 
 const theme = {
   fg: (_color: string, text: string) => `\x1b[32m${text}\x1b[0m`,
@@ -45,10 +46,7 @@ function makeUiSpy() {
 
 function renderCall(call: { content: unknown }, width: number): string[] {
   expect(typeof call.content).toBe('function');
-  const component = (call.content as (tui: unknown, theme: Theme) => { render: (width: number) => string[]; invalidate: () => void })(
-    {},
-    theme,
-  );
+  const component = (call.content as (tui: unknown, theme: Theme) => { render: (width: number) => string[]; invalidate: () => void })({}, theme);
   component.invalidate();
   return component.render(width);
 }
@@ -152,7 +150,11 @@ describe('status widget controller', () => {
 
   test('handles Unicode names, ANSI styling, absent values, and factory replacement after roster changes', async () => {
     const { ui, calls } = makeUiSpy();
-    const host = spawn('界界-agent', { getModelId: () => undefined, getContextSnapshot: () => undefined, onChange: () => P2PWidgetController.renderWidget(ui, host) });
+    const host = spawn('界界-agent', {
+      getModelId: () => undefined,
+      getContextSnapshot: () => undefined,
+      onChange: () => P2PWidgetController.renderWidget(ui, host),
+    });
     await host.createHub('unicode-hub');
     const firstFactory = calls.at(-1)?.content;
     expect(typeof firstFactory).toBe('function');
@@ -165,7 +167,8 @@ describe('status widget controller', () => {
     expect(calls.at(-1)?.content).not.toBe(firstFactory);
     const lines = renderCall(calls.at(-1)!, 36);
     expect(lines.every(line => visibleWidth(line) <= 36)).toBe(true);
-    expect(lines.join('\n')).toContain('\x1b[');
+    if (dye.enabled) expect(lines.join('\n')).toContain('\x1b[');
+    else expect(lines.join('\n')).not.toContain('\x1b[');
 
     host.disconnect('manual');
     expect(calls.at(-1)).toEqual({ key: STATUS_WIDGET_KEY, content: undefined, options: { placement: 'belowEditor' } });

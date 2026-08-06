@@ -44,6 +44,29 @@ describe('ConfigLoader', () => {
     expect(result.config.p2p_hub).toEqual({ enabled: false, layout: 'inline' });
   });
 
+  it('initializes one shared provider for extensions', () => {
+    writeFileSync(globalPath, JSON.stringify({ tmux_popup: { enabled: true }, p2p_hub: { enabled: true, layout: 'overlay' } }));
+    const loader = new ConfigLoader();
+
+    const result = loader.initializeConfig(createCtx(false, tmpDir), createResolver(globalPath));
+
+    expect(result.success).toBe(true);
+    expect(loader.getTmuxPopup().enabled).toBe(true);
+    expect(loader.getP2pHub()).toEqual({ enabled: true, layout: 'overlay' });
+  });
+
+  it('resets the shared provider to defaults when reinitialization fails', () => {
+    const loader = new ConfigLoader();
+    writeFileSync(globalPath, JSON.stringify({ p2p_hub: { enabled: true } }));
+    loader.initializeConfig(createCtx(false, tmpDir), createResolver(globalPath));
+    writeFileSync(globalPath, '{ invalid');
+
+    const result = loader.initializeConfig(createCtx(false, tmpDir), createResolver(globalPath));
+
+    expect(result.success).toBe(false);
+    expect(loader.getP2pHub().enabled).toBe(false);
+  });
+
   it('applies global configuration overrides', () => {
     writeFileSync(globalPath, JSON.stringify({ tmux_popup: { enabled: true, width: 80 } }));
 

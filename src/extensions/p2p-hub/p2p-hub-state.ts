@@ -12,6 +12,7 @@ import {
   PROMPT_HARD_CEILING_MS,
   PROMPT_INACTIVITY_MS,
   RECONNECT_RETRY_MS,
+  RUNTIME_HANDOFF_TIMEOUT_MS,
   WELCOME_TIMEOUT_MS,
 } from './constants';
 import {
@@ -41,9 +42,7 @@ export interface P2pRosterEntry {
   isSelf: boolean;
 }
 
-export interface P2pHubStateDeps {
-  registry: HubRegistry;
-  identity: { name: string; description: string | undefined; cwd: string };
+export interface P2pHubRuntimeBinding {
   /** Canonical Pi model ID for the active model. */
   getModelId: () => string | undefined;
   getContextSnapshot: () => P2pContextSnapshot | undefined;
@@ -58,6 +57,13 @@ export interface P2pHubStateDeps {
   /** Roster, status, or connection state changed - re-render widget/modal. */
   onChange: () => void;
 }
+
+export interface P2pHubStateDeps extends P2pHubRuntimeBinding {
+  registry: HubRegistry;
+  identity: { name: string; description: string | undefined; cwd: string };
+}
+
+export type P2pHubBindingToken = symbol;
 
 interface PendingPromptResponse {
   resolve: (result: { response?: string; error?: string; from?: string }) => void;
@@ -113,15 +119,77 @@ export class P2pHubState {
   // Promotion
   private promotionTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
+  private binding: { token: P2pHubBindingToken; runtime: P2pHubRuntimeBinding } | null = null;
+  private handoffTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly detachedChats: ChatMsg[] = [];
   private readonly changeListeners = new Set<() => void>();
+  private readonly disposeListeners = new Set<() => void>();
+  private readonly registry: HubRegistry;
+  private readonly identity: P2pHubStateDeps['identity'];
 
-  public constructor(private readonly deps: P2pHubStateDeps) {
+  public constructor(deps: P2pHubStateDeps) {
+    this.registry = deps.registry;
+    this.identity = deps.identity;
     this.selfName = deps.identity.name;
-    const onChange = deps.onChange;
-    deps.onChange = () => {
-      onChange();
-      for (const listener of this.changeListeners) listener();
-    };
+    this.binding = { token: Symbol('p2p-hub-runtime-binding'), runtime: deps };
+  }
+
+  public attachRuntime(runtime: P2pHubRuntimeBinding): P2pHubBindingToken {
+    if (this.disposed) throw new Error('Cannot attach a disposed p2p-hub service');
+    if (this.handoffTimer) {
+      clearTimeout(this.handoffTimer);
+      this.handoffTimer = null;
+    }
+    const token = Symbol('p2p-hub-runtime-binding');
+    this.binding = { token, runtime };
+    this.agentRunning = false;
+    this.activeToolName = null;
+    this.stateSince = Date.now();
+    this.emitChange();
+    this.pushStatus(true);
+    this.drainDetachedChats();
+    return token;
+  }
+
+  public detachRuntime(token: P2pHubBindingToken): boolean {
+    if (this.binding?.token !== token) return false;
+    this.cancelRuntimeOwnedPrompts('runtime_replaced');
+    this.agentRunning = false;
+    this.activeToolName = null;
+    this.stateSince = Date.now();
+    this.pushStatus(true);
+    this.binding = null;
+    if (this.handoffTimer) clearTimeout(this.handoffTimer);
+    this.handoffTimer = setTimeout(() => {
+      this.handoffTimer = null;
+      if (!this.binding) this.dispose();
+    }, RUNTIME_HANDOFF_TIMEOUT_MS);
+    return true;
+  }
+
+  public isRuntimeAttached(): boolean {
+    return this.binding !== null;
+  }
+
+  public refreshRuntime(token: P2pHubBindingToken): void {
+    if (!this.runtimeFor(token)) return;
+    this.emitChange();
+    this.pushStatus(true);
+  }
+
+  public subscribeToDispose(listener: () => void): () => void {
+    this.disposeListeners.add(listener);
+    return () => this.disposeListeners.delete(listener);
+  }
+
+  private runtimeFor(token?: P2pHubBindingToken): P2pHubRuntimeBinding | undefined {
+    if (token && this.binding?.token !== token) return undefined;
+    return this.binding?.runtime;
+  }
+
+  private emitChange(): void {
+    this.binding?.runtime.onChange();
+    for (const listener of this.changeListeners) listener();
   }
 
   // ── Public accessors ────────────────────────────────────────────────────
@@ -170,9 +238,20 @@ export class P2pHubState {
   }
 
   public dispose(): void {
+    if (this.disposed) return;
     this.disposed = true;
+    if (this.handoffTimer) clearTimeout(this.handoffTimer);
+    this.handoffTimer = null;
+    if (this.flushTimer) clearTimeout(this.flushTimer);
+    this.flushTimer = null;
+    this.cancelRuntimeOwnedPrompts('runtime_replaced');
+    this.inbox.length = 0;
+    this.detachedChats.length = 0;
     this.disconnect('manual');
+    this.binding = null;
     this.changeListeners.clear();
+    for (const listener of this.disposeListeners) listener();
+    this.disposeListeners.clear();
   }
 
   /**
@@ -207,10 +286,10 @@ export class P2pHubState {
   private selfIdentity(): P2pIdentity {
     return {
       name: this.selfName,
-      model: this.deps.getModelId(),
-      description: this.deps.identity.description,
-      cwd: this.deps.identity.cwd,
-      context: this.deps.getContextSnapshot(),
+      model: this.runtimeFor()?.getModelId(),
+      description: this.identity.description,
+      cwd: this.identity.cwd,
+      context: this.runtimeFor()?.getContextSnapshot(),
     };
   }
 
@@ -220,14 +299,16 @@ export class P2pHubState {
     return { kind: 'idle', since: this.stateSince };
   }
 
-  public setAgentRunning(running: boolean): void {
+  public setAgentRunning(running: boolean, token?: P2pHubBindingToken): void {
+    if (token && !this.runtimeFor(token)) return;
     this.agentRunning = running;
     if (!running) this.activeToolName = null;
     this.stateSince = Date.now();
     this.pushStatus();
   }
 
-  public setActiveTool(toolName: string | null): void {
+  public setActiveTool(toolName: string | null, token?: P2pHubBindingToken): void {
+    if (token && !this.runtimeFor(token)) return;
     this.activeToolName = toolName;
     if (this.agentRunning || toolName) this.stateSince = Date.now();
     this.pushStatus();
@@ -244,15 +325,15 @@ export class P2pHubState {
       type: 'status_update',
       name: this.selfName,
       status,
-      model: this.deps.getModelId(),
-      context: this.deps.getContextSnapshot() ?? null,
+      model: this.runtimeFor()?.getModelId(),
+      context: this.runtimeFor()?.getContextSnapshot() ?? null,
     };
     if (this.role === 'host') {
       this.hubBroadcast(msg);
     } else if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
     }
-    this.deps.onChange();
+    this.emitChange();
   }
 
   // ── Create / join / disconnect ──────────────────────────────────────────
@@ -260,11 +341,11 @@ export class P2pHubState {
   public async createHub(name: string): Promise<CreateHubResult> {
     if (this.isConnected()) this.disconnect('manual');
 
-    const existing = this.deps.registry.read(name);
+    const existing = this.registry.read(name);
     if (existing && (await isEntryLive(existing))) {
       return { success: false, error: `Hub "${name}" already exists and is live.` };
     }
-    if (existing) this.deps.registry.remove(name);
+    if (existing) this.registry.remove(name);
 
     return this.startHost(name, undefined);
   }
@@ -311,7 +392,7 @@ export class P2pHubState {
       }
       // Only the host removes the registry entry on a clean, manual shutdown.
       // Losing clients will race to promote instead of racing to delete.
-      if (priorHubName) this.deps.registry.remove(priorHubName);
+      if (priorHubName) this.registry.remove(priorHubName);
     } else if (this.ws) {
       try {
         this.ws.close();
@@ -336,9 +417,9 @@ export class P2pHubState {
       if (pending) pending.resolve({ error: `disconnected:${pending.targetName}` });
     }
 
-    this.deps.onChange();
+    this.emitChange();
     if (reason === 'manual' && priorHubName) {
-      this.deps.notify(`Disconnected from hub "${priorHubName}"`, 'info');
+      this.runtimeFor()?.notify(`Disconnected from hub "${priorHubName}"`, 'info');
     }
   }
 
@@ -369,9 +450,9 @@ export class P2pHubState {
           this.lastPushedKind = null;
           this.lastPushedTool = null;
 
-          await this.deps.registry.write({ name, port, hostPid: process.pid, createdAt: new Date().toISOString() });
-          this.deps.notify(`Hub "${name}" created on :${port} as host "${this.selfName}"`, 'info');
-          this.deps.onChange();
+          await this.registry.write({ name, port, hostPid: process.pid, createdAt: new Date().toISOString() });
+          this.runtimeFor()?.notify(`Hub "${name}" created on :${port} as host "${this.selfName}"`, 'info');
+          this.emitChange();
           this.pushStatus(true);
           resolve({ success: true });
         })();
@@ -438,8 +519,8 @@ export class P2pHubState {
 
         const joined: MemberJoinedMsg = { type: 'member_joined', identity };
         this.hubBroadcast(joined, clientName);
-        this.deps.notify(`"${clientName}" joined hub "${this.hubName}"`, 'info');
-        this.deps.onChange();
+        this.runtimeFor()?.notify(`"${clientName}" joined hub "${this.hubName}"`, 'info');
+        this.emitChange();
         return;
       }
 
@@ -455,7 +536,7 @@ export class P2pHubState {
         this.resetInactivityFor(clientName);
         const normalized: StatusUpdateMsg = { type: 'status_update', name: clientName, status: msg.status, model: msg.model, context: msg.context };
         this.hubBroadcast(normalized, clientName, /* excludeHost */ true);
-        this.deps.onChange();
+        this.emitChange();
         return;
       }
 
@@ -474,8 +555,8 @@ export class P2pHubState {
       this.failPendingFor(name);
       const left: MemberLeftMsg = { type: 'member_left', name };
       this.hubBroadcast(left);
-      this.deps.notify(`"${name}" left hub "${this.hubName}"`, 'info');
-      this.deps.onChange();
+      this.runtimeFor()?.notify(`"${name}" left hub "${this.hubName}"`, 'info');
+      this.emitChange();
     });
 
     clientWs.on('error', () => {
@@ -560,7 +641,7 @@ export class P2pHubState {
         this.clientHostName = undefined;
         this.members.clear();
         this.statuses.clear();
-        this.deps.onChange();
+        this.emitChange();
       };
       const finishFailure = (error: string) => {
         if (settled) return;
@@ -593,10 +674,10 @@ export class P2pHubState {
         const register: RegisterMsg = {
           type: 'register',
           name: this.selfName,
-          model: this.deps.getModelId(),
-          description: this.deps.identity.description,
-          cwd: this.deps.identity.cwd,
-          context: this.deps.getContextSnapshot(),
+          model: this.runtimeFor()?.getModelId(),
+          description: this.identity.description,
+          cwd: this.identity.cwd,
+          context: this.runtimeFor()?.getContextSnapshot(),
         };
         socket.send(JSON.stringify(register));
       });
@@ -637,9 +718,9 @@ export class P2pHubState {
           this.clientHostName = undefined;
           this.members.clear();
           this.statuses.clear();
-          this.deps.onChange();
+          this.emitChange();
           if (!this.manuallyDisconnected && lostHubName && lostPort) {
-            this.deps.notify(`Lost connection to hub "${lostHubName}" - attempting promotion`, 'warning');
+            this.runtimeFor()?.notify(`Lost connection to hub "${lostHubName}" - attempting promotion`, 'warning');
             this.schedulePromotion(lostHubName, lostPort);
           }
         }
@@ -664,7 +745,7 @@ export class P2pHubState {
   private async attemptPromotion(hubName: string, port: number): Promise<void> {
     const hostResult = await this.startHost(hubName, port);
     if (hostResult.success) {
-      this.deps.notify(`Promoted to host of hub "${hubName}"`, 'info');
+      this.runtimeFor()?.notify(`Promoted to host of hub "${hubName}"`, 'info');
       return;
     }
     // Someone else won the race, or the port never frees up (rare). Retry as client.
@@ -721,23 +802,23 @@ export class P2pHubState {
         this.members.set(msg.host.name, msg.host);
         for (const identity of msg.clients) this.members.set(identity.name, identity);
         for (const [name, status] of Object.entries(msg.statuses)) this.statuses.set(name, status);
-        this.deps.onChange();
-        this.deps.notify(`Joined hub "${this.hubName}" as "${this.selfName}"`, 'info');
+        this.emitChange();
+        this.runtimeFor()?.notify(`Joined hub "${this.hubName}" as "${this.selfName}"`, 'info');
         this.pushStatus(true);
         break;
       }
       case 'member_joined': {
         this.members.set(msg.identity.name, msg.identity);
-        this.deps.onChange();
-        this.deps.notify(`"${msg.identity.name}" joined hub "${this.hubName}"`, 'info');
+        this.emitChange();
+        this.runtimeFor()?.notify(`"${msg.identity.name}" joined hub "${this.hubName}"`, 'info');
         break;
       }
       case 'member_left': {
         this.members.delete(msg.name);
         this.statuses.delete(msg.name);
         this.failPendingFor(msg.name);
-        this.deps.onChange();
-        this.deps.notify(`"${msg.name}" left hub "${this.hubName}"`, 'info');
+        this.emitChange();
+        this.runtimeFor()?.notify(`"${msg.name}" left hub "${this.hubName}"`, 'info');
         break;
       }
       case 'status_update': {
@@ -748,19 +829,34 @@ export class P2pHubState {
           if (msg.context !== undefined) identity.context = msg.context ?? undefined;
         }
         this.resetInactivityFor(msg.name);
-        this.deps.onChange();
+        this.emitChange();
         break;
       }
       case 'chat': {
-        if (msg.triggerTurn) {
+        const runtime = this.runtimeFor();
+        if (!runtime) {
+          this.detachedChats.push(msg);
+        } else if (msg.triggerTurn) {
           this.inbox.push({ from: msg.from, content: msg.content });
           this.scheduleFlush(FLUSH_DELAY_MS);
         } else {
-          this.deps.deliverSteer(msg.content, msg.from);
+          runtime.deliverSteer(msg.content, msg.from);
         }
         break;
       }
       case 'prompt_request': {
+        if (!this.runtimeFor()) {
+          const unavailable: PromptResponseMsg = {
+            type: 'prompt_response',
+            id: msg.id,
+            from: this.selfName,
+            to: msg.from,
+            response: '',
+            error: 'runtime_temporarily_unavailable',
+          };
+          this.sendChatLikeMessage(unavailable);
+          break;
+        }
         if (this.agentRunning || this.pendingRemotePrompt) {
           const busy: PromptResponseMsg = {
             type: 'prompt_response',
@@ -776,8 +872,8 @@ export class P2pHubState {
         this.pendingRemotePrompt = { id: msg.id, from: msg.from };
         if (this.keepaliveTimer) clearInterval(this.keepaliveTimer);
         this.keepaliveTimer = setInterval(() => this.pushStatus(true), KEEPALIVE_INTERVAL_MS);
-        this.deps.notify(`Running remote prompt from "${msg.from}"`, 'info');
-        this.deps.runRemotePrompt(msg.from, msg.prompt);
+        this.runtimeFor()?.notify(`Running remote prompt from "${msg.from}"`, 'info');
+        this.runtimeFor()?.runRemotePrompt(msg.from, msg.prompt);
         break;
       }
       case 'prompt_response': {
@@ -786,7 +882,7 @@ export class P2pHubState {
         break;
       }
       case 'error': {
-        this.deps.notify(`p2p-hub: ${msg.message}`, 'error');
+        this.runtimeFor()?.notify(`p2p-hub: ${msg.message}`, 'error');
         break;
       }
       default:
@@ -809,6 +905,16 @@ export class P2pHubState {
 
   // ── Inbox flush (idle-gated batching) ───────────────────────────────────
 
+  private drainDetachedChats(): void {
+    if (!this.binding || this.detachedChats.length === 0) return;
+    const queued = this.detachedChats.splice(0);
+    for (const msg of queued) {
+      if (msg.triggerTurn) this.inbox.push({ from: msg.from, content: msg.content });
+      else this.binding.runtime.deliverSteer(msg.content, msg.from);
+    }
+    if (this.inbox.length > 0) this.scheduleFlush(0);
+  }
+
   private scheduleFlush(delay: number): void {
     if (this.flushTimer) clearTimeout(this.flushTimer);
     this.flushTimer = setTimeout(() => this.flushInbox(), delay);
@@ -817,7 +923,7 @@ export class P2pHubState {
   private flushInbox(): void {
     this.flushTimer = null;
     if (this.inbox.length === 0) return;
-    if (!this.deps.isIdle()) {
+    if (!this.runtimeFor()?.isIdle()) {
       this.scheduleFlush(IDLE_RETRY_MS);
       return;
     }
@@ -833,20 +939,21 @@ export class P2pHubState {
       totalChars += text.length;
     }
 
-    this.deps.deliverBatch(batch.join('\n\n'), batch.length);
+    this.runtimeFor()?.deliverBatch(batch.join('\n\n'), batch.length);
     this.inbox.splice(0, batch.length);
     if (this.inbox.length > 0) this.scheduleFlush(IDLE_RETRY_MS);
   }
 
   /** Called by the extension wrapper when the agent settles - wakes a stalled flush. */
-  public wakeInboxFlush(): void {
+  public wakeInboxFlush(token?: P2pHubBindingToken): void {
+    if (token && !this.runtimeFor(token)) return;
     if (this.inbox.length > 0) this.scheduleFlush(0);
   }
 
   // ── Remote prompt completion (called from agent_end) ────────────────────
 
-  public resolveRemotePrompt(responseText: string): void {
-    if (!this.pendingRemotePrompt) return;
+  public resolveRemotePrompt(responseText: string, token?: P2pHubBindingToken): void {
+    if ((token && !this.runtimeFor(token)) || !this.pendingRemotePrompt) return;
     const { id, from } = this.pendingRemotePrompt;
     if (this.keepaliveTimer) {
       clearInterval(this.keepaliveTimer);
@@ -855,6 +962,20 @@ export class P2pHubState {
     this.pendingRemotePrompt = null;
     const response: PromptResponseMsg = { type: 'prompt_response', id, from: this.selfName, to: from, response: responseText || '(no response)' };
     this.sendChatLikeMessage(response);
+  }
+
+  private cancelRuntimeOwnedPrompts(error: string): void {
+    for (const [id] of this.pendingPromptResponses) {
+      const pending = this.cleanupPending(id);
+      pending?.resolve({ error });
+    }
+    if (this.pendingRemotePrompt) {
+      const { id, from } = this.pendingRemotePrompt;
+      this.pendingRemotePrompt = null;
+      if (this.keepaliveTimer) clearInterval(this.keepaliveTimer);
+      this.keepaliveTimer = null;
+      this.sendChatLikeMessage({ type: 'prompt_response', id, from: this.selfName, to: from, response: '', error });
+    }
   }
 
   // ── Outbound tool operations ─────────────────────────────────────────────
