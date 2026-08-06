@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, jest, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -288,6 +288,105 @@ describe('P2pHubState', () => {
 
     const hostRoster = host.getRoster().map(r => r.identity.name);
     expect(hostRoster).toEqual(['host-a']);
+  });
+
+  test('runtime replacement rejects stale callbacks and refreshes model/context status', async () => {
+    let oldChanges = 0;
+    let newChanges = 0;
+    const host = spawn('host-binding', { onChange: () => oldChanges++ });
+    await host.createHub('binding-hub');
+    const oldToken = host.attachRuntime(makeDeps({ name: 'host-binding', registry, getModelId: () => 'old-model', onChange: () => oldChanges++ }));
+    host.detachRuntime(oldToken);
+
+    const newToken = host.attachRuntime(
+      makeDeps({
+        name: 'host-binding',
+        registry,
+        getModelId: () => 'new-model',
+        getContextSnapshot: () => ({ tokens: 42, contextWindow: 100 }),
+        onChange: () => newChanges++,
+      }),
+    );
+    host.setActiveTool('stale-tool', oldToken);
+
+    expect(host.getRoster()[0]?.identity.model).toBe('new-model');
+    expect(host.getRoster()[0]?.identity.context).toEqual({ tokens: 42, contextWindow: 100 });
+    expect(host.getRoster()[0]?.status?.kind).toBe('idle');
+    expect(newChanges).toBeGreaterThan(0);
+    expect(host.isRuntimeAttached()).toBe(true);
+    host.setActiveTool('bash', newToken);
+    expect(host.getRoster()[0]?.status).toMatchObject({ kind: 'tool', toolName: 'bash' });
+  });
+
+  test('queues trigger-turn and steer chat while detached and rejects prompts temporarily', async () => {
+    const batches: string[] = [];
+    const steers: string[] = [];
+    const host = spawn('host-detached');
+    await host.createHub('detached-hub');
+    const entry = registry.read('detached-hub');
+    if (!entry) throw new Error('missing entry');
+    const client = spawn('client-detached');
+    await client.joinHub(entry);
+    await Bun.sleep(20);
+
+    const token = host.attachRuntime(makeDeps({ name: 'host-detached', registry }));
+    host.detachRuntime(token);
+    client.sendChat('host-detached', 'turn later', true);
+    client.sendChat('host-detached', 'steer later', false);
+    const unavailable = await client.askPrompt('host-detached', 'do work');
+    expect(unavailable.error).toBe('runtime_temporarily_unavailable');
+
+    host.attachRuntime(
+      makeDeps({
+        name: 'host-detached',
+        registry,
+        deliverBatch: text => batches.push(text),
+        deliverSteer: content => steers.push(content),
+      }),
+    );
+    await Bun.sleep(20);
+    expect(batches.join('\n')).toContain('turn later');
+    expect(steers).toEqual(['steer later']);
+  });
+
+  test('detach terminates outgoing and incoming runtime-owned prompt work', async () => {
+    const host = spawn('host-prompts', { runRemotePrompt: () => {} });
+    await host.createHub('prompt-detach-hub');
+    const entry = registry.read('prompt-detach-hub');
+    if (!entry) throw new Error('missing entry');
+    const client = spawn('client-prompts', { runRemotePrompt: () => {} });
+    await client.joinHub(entry);
+    await Bun.sleep(20);
+
+    const hostToken = host.attachRuntime(makeDeps({ name: 'host-prompts', registry, runRemotePrompt: () => {} }));
+    const incoming = client.askPrompt('host-prompts', 'incoming work');
+    await Bun.sleep(10);
+    host.detachRuntime(hostToken);
+    expect((await incoming).error).toBe('runtime_replaced');
+
+    host.attachRuntime(makeDeps({ name: 'host-prompts', registry, runRemotePrompt: () => {} }));
+    const clientToken = client.attachRuntime(makeDeps({ name: 'client-prompts', registry, runRemotePrompt: () => {} }));
+    const outgoing = client.askPrompt('host-prompts', 'outgoing work');
+    await Bun.sleep(10);
+    client.detachRuntime(clientToken);
+    expect((await outgoing).error).toBe('runtime_replaced');
+  });
+
+  test('handoff timeout disposes transport, registry ownership, and retained queues', async () => {
+    const host = spawn('host-timeout');
+    await host.createHub('timeout-hub');
+    const token = host.attachRuntime(makeDeps({ name: 'host-timeout', registry }));
+
+    jest.useFakeTimers();
+    try {
+      host.detachRuntime(token);
+      jest.advanceTimersByTime(5001);
+      expect(host.isConnected()).toBe(false);
+      expect(host.isRuntimeAttached()).toBe(false);
+      expect(registry.exists('timeout-hub')).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test('promotion: a client rebinds the same port and becomes host after the original host disconnects', async () => {

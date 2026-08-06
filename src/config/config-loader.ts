@@ -18,7 +18,32 @@ export class DefaultConfigResolver implements ConfigResolver {
   }
 }
 
-export class ConfigLoader {
+export interface ConfigProvider {
+  getP2pHub(): Config['p2p_hub'];
+  getTmuxPopup(): Config['tmux_popup'];
+}
+
+export class ConfigLoader implements ConfigProvider {
+  private config: Config = ConfigSchema.parse({});
+
+  public initializeConfig(
+    ctx: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted'>,
+    resolver: ConfigResolver = new DefaultConfigResolver(),
+  ): ConfigLoadResult {
+    this.config = ConfigSchema.parse({});
+    const result = ConfigLoader.load(ctx, resolver);
+    if (result.success) this.config = result.config;
+    return result;
+  }
+
+  public getP2pHub(): Config['p2p_hub'] {
+    return this.config.p2p_hub;
+  }
+
+  public getTmuxPopup(): Config['tmux_popup'] {
+    return this.config.tmux_popup;
+  }
+
   static load(ctx: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted'>, resolver: ConfigResolver = new DefaultConfigResolver()): ConfigLoadResult {
     let config: Config = ConfigSchema.parse({});
 

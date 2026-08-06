@@ -1,34 +1,44 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { ConfigLoader, type ConfigLoadResult } from '../../config/config-loader';
+import type { ConfigProvider } from '../../config/config-loader';
 import { COMMAND_NAME, PI_VIM_KEY_EVENT_ID } from './constants';
 import { resolveP2pIdentity } from './identity.util';
 import { openP2pHubModal } from './modal/open-p2p-hub-modal';
-import { P2pHubState } from './p2p-hub-state';
+import { clearP2pHubService, installP2pHubService, resolveP2pHubService } from './p2p-hub-service';
+import { type P2pHubBindingToken, type P2pHubRuntimeBinding, P2pHubState } from './p2p-hub-state';
 import { HubRegistry } from './registry.util';
 import { createP2pAskTool } from './tools/p2p-ask.tool';
 import { createP2pLsTool } from './tools/p2p-ls.tool';
 import { createP2pSendTool } from './tools/p2p-send.tool';
 import { P2PWidgetController } from './widget/status-widget-controller';
 
-function loadP2pHubConfig(ctx: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted'>): ConfigLoadResult {
-  return ConfigLoader.load(ctx);
+function clearWidget(ctx: ExtensionContext): void {
+  try {
+    P2PWidgetController.clearWidget(ctx.ui);
+  } catch {
+    // UI unavailable - nothing to clear.
+  }
 }
 
-function isP2pHubEnabled(ctx: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted'>): boolean {
-  const result = loadP2pHubConfig(ctx);
-  return result.success && result.config.p2p_hub.enabled;
+function disposePreservedService(ctx: ExtensionContext): void {
+  const service = resolveP2pHubService();
+  if (service) {
+    clearP2pHubService(service);
+    service.dispose();
+  }
+  clearWidget(ctx);
 }
 
 /** @internal exported only so tests can drive `state` and lifecycle hooks directly. */
-export function activateP2pHub(pi: ExtensionAPI, initialCtx: ExtensionContext): { state: P2pHubState } {
+export function activateP2pHub(
+  pi: ExtensionAPI,
+  initialCtx: ExtensionContext,
+  deps: { config: ConfigProvider },
+): { state: P2pHubState; bindingToken: P2pHubBindingToken } {
   let latestCtx: ExtensionContext = initialCtx;
-  const enabled = () => isP2pHubEnabled(latestCtx);
   const registry = new HubRegistry();
-  const identity = resolveP2pIdentity(initialCtx.cwd);
+  let state!: P2pHubState;
 
-  const state = new P2pHubState({
-    registry,
-    identity: { name: identity.name, description: identity.description, cwd: initialCtx.cwd },
+  const runtime: P2pHubRuntimeBinding = {
     getModelId: () => latestCtx.model?.id,
     getContextSnapshot: () => {
       const usage = latestCtx.getContextUsage();
@@ -73,29 +83,48 @@ export function activateP2pHub(pi: ExtensionAPI, initialCtx: ExtensionContext): 
         // UI unavailable - nothing to update.
       }
     },
-  });
+  };
+
+  const existing = resolveP2pHubService();
+  if (existing) {
+    state = existing;
+  } else {
+    const identity = resolveP2pIdentity(initialCtx.cwd);
+    state = installP2pHubService(
+      new P2pHubState({
+        registry,
+        identity: { name: identity.name, description: identity.description, cwd: initialCtx.cwd },
+        ...runtime,
+      }),
+    );
+  }
+  const bindingToken = state.attachRuntime(runtime);
 
   pi.on('session_start', (_event, ctx) => {
     latestCtx = ctx;
-    if (!enabled() && state.isConnected()) {
-      state.disconnect('disabled');
-      try {
-        P2PWidgetController.clearWidget(ctx.ui);
-      } catch {
-        // UI unavailable - nothing to clear.
-      }
+    state.refreshRuntime(bindingToken);
+  });
+
+  pi.on('session_shutdown', (event, ctx) => {
+    clearWidget(ctx);
+
+    if (event.reason === 'quit') {
+      clearP2pHubService(state);
+      state.dispose();
+    }
+
+    if (['reload', 'new', 'resume', 'fork'].includes(event.reason)) {
+      state.detachRuntime(bindingToken);
     }
   });
 
   pi.on('agent_start', () => {
-    if (!enabled()) return;
-    state.setAgentRunning(true);
+    state.setAgentRunning(true, bindingToken);
   });
 
   pi.on('agent_end', (event, _ctx) => {
-    if (!enabled()) return;
-    state.setAgentRunning(false);
-    state.wakeInboxFlush();
+    state.setAgentRunning(false, bindingToken);
+    state.wakeInboxFlush(bindingToken);
 
     let responseText = '';
     for (let i = event.messages.length - 1; i >= 0; i--) {
@@ -108,17 +137,15 @@ export function activateP2pHub(pi: ExtensionAPI, initialCtx: ExtensionContext): 
         break;
       }
     }
-    state.resolveRemotePrompt(responseText);
+    state.resolveRemotePrompt(responseText, bindingToken);
   });
 
   pi.on('tool_execution_start', event => {
-    if (!enabled()) return;
-    state.setActiveTool(event.toolName);
+    state.setActiveTool(event.toolName, bindingToken);
   });
 
   pi.on('tool_execution_end', () => {
-    if (!enabled()) return;
-    state.setActiveTool(null);
+    state.setActiveTool(null, bindingToken);
   });
 
   pi.registerTool(createP2pSendTool(state));
@@ -130,22 +157,13 @@ export function activateP2pHub(pi: ExtensionAPI, initialCtx: ExtensionContext): 
       ctx.ui.notify(`/${COMMAND_NAME} requires TUI mode.`, 'warning');
       return;
     }
-    const config = loadP2pHubConfig(ctx);
-    if (!config.success) {
-      ctx.ui.notify(`p2p-hub: ${config.error}`, 'error');
-      return;
-    }
-    await openP2pHubModal(ctx, state, registry, config.config.p2p_hub.layout);
+    await openP2pHubModal(ctx, state, registry, deps.config.getP2pHub().layout);
   };
 
   pi.registerCommand(COMMAND_NAME, {
     description: 'Connect to, browse, or create p2p-hub networks',
     handler: async (args, ctx) => {
       latestCtx = ctx;
-      if (!enabled()) {
-        ctx.ui.notify('(pi-arsenal) p2p_hub is disabled', 'warning');
-        return;
-      }
       if (args.trim()) {
         ctx.ui.notify(`/${COMMAND_NAME} accepts no arguments.`, 'error');
         return;
@@ -155,21 +173,25 @@ export function activateP2pHub(pi: ExtensionAPI, initialCtx: ExtensionContext): 
   });
 
   pi.events.on(PI_VIM_KEY_EVENT_ID, () => {
-    if (!enabled() || latestCtx.mode !== 'tui') return;
+    if (latestCtx.mode !== 'tui') return;
     void openModal(latestCtx).catch(error => {
       latestCtx.ui.notify(`p2p-hub: failed to open modal: ${error instanceof Error ? error.message : String(error)}`, 'error');
     });
   });
 
-  return { state };
+  return { state, bindingToken };
 }
 
-/** Lazily activates p2p-hub only after the first session with `p2p_hub.enabled: true`. */
-export function registerP2pHub(pi: ExtensionAPI): void {
+/** Lazily registers surfaces once per runtime and reuses the process service. */
+export function registerP2pHub(pi: ExtensionAPI, deps: { config: ConfigProvider }): void {
   let registered = false;
   pi.on('session_start', (_event, ctx) => {
-    if (registered || !isP2pHubEnabled(ctx)) return;
-    activateP2pHub(pi, ctx);
+    if (!deps.config.getP2pHub().enabled) {
+      disposePreservedService(ctx);
+      return;
+    }
+    if (registered) return;
+    activateP2pHub(pi, ctx, deps);
     registered = true;
   });
 }

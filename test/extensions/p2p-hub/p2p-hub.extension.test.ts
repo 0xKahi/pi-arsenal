@@ -1,15 +1,19 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
-import type { ConfigLoadResult } from '../../../src/config/config-loader';
+import type { ConfigProvider } from '../../../src/config/config-loader';
 import { activateP2pHub, registerP2pHub } from '../../../src/extensions/p2p-hub/p2p-hub.extension';
+import { resetP2pHubService, resolveP2pHubService } from '../../../src/extensions/p2p-hub/p2p-hub-service';
+import { P2pHubState, type P2pHubStateDeps } from '../../../src/extensions/p2p-hub/p2p-hub-state';
+import { HubRegistry } from '../../../src/extensions/p2p-hub/registry.util';
 
 type Handler = (event: unknown, ctx: ExtensionContext) => void;
 
 function makePi() {
   const sessionStartHandlers: Handler[] = [];
+  const sessionShutdownHandlers: Handler[] = [];
   const registerToolCalls: unknown[] = [];
   const registerCommandCalls: { name: string; options: { handler: (args: string, ctx: ExtensionContext) => Promise<void> } }[] = [];
   const eventBusHandlers = new Map<string, (() => void)[]>();
@@ -17,6 +21,7 @@ function makePi() {
   const pi = {
     on: (event: string, handler: Handler) => {
       if (event === 'session_start') sessionStartHandlers.push(handler);
+      if (event === 'session_shutdown') sessionShutdownHandlers.push(handler);
     },
     registerTool: (tool: unknown) => {
       registerToolCalls.push(tool);
@@ -37,7 +42,7 @@ function makePi() {
     },
   } as unknown as ExtensionAPI;
 
-  return { pi, sessionStartHandlers, registerToolCalls, registerCommandCalls, eventBusHandlers };
+  return { pi, sessionStartHandlers, sessionShutdownHandlers, registerToolCalls, registerCommandCalls, eventBusHandlers };
 }
 
 function makeCtx(cwd: string, opts: { notifyCalls?: { message: string; type?: string }[]; setWidgetCalls?: unknown[] } = {}): ExtensionContext {
@@ -58,12 +63,29 @@ function makeCtx(cwd: string, opts: { notifyCalls?: { message: string; type?: st
   } as unknown as ExtensionContext;
 }
 
+function makeStateDeps(name: string, registry: HubRegistry): P2pHubStateDeps {
+  return {
+    registry,
+    identity: { name, description: undefined, cwd: `/tmp/${name}` },
+    getModelId: () => 'test-model',
+    getContextSnapshot: () => undefined,
+    isIdle: () => true,
+    deliverBatch: () => {},
+    deliverSteer: () => {},
+    runRemotePrompt: () => {},
+    notify: () => {},
+    onChange: () => {},
+  };
+}
+
+let configEnabled = false;
+const config: ConfigProvider = {
+  getP2pHub: () => ({ enabled: configEnabled, layout: 'inline' }),
+  getTmuxPopup: () => ({ enabled: false, width: 50, height: 50, fileCommand: 'nvim' }),
+};
+
 function mockConfig(enabled: boolean) {
-  mock.module('../../../src/config/config-loader', () => ({
-    ConfigLoader: {
-      load: (): ConfigLoadResult => ({ success: true, config: { tmux_popup: { enabled: false }, p2p_hub: { enabled } } as never }),
-    },
-  }));
+  configEnabled = enabled;
 }
 
 describe('registerP2pHub lazy activation', () => {
@@ -71,18 +93,19 @@ describe('registerP2pHub lazy activation', () => {
 
   beforeEach(() => {
     cwd = join(tmpdir(), `p2p-ext-${Math.random().toString(36).slice(2)}`);
+    configEnabled = false;
   });
 
   afterEach(() => {
+    resetP2pHubService();
     rmSync(cwd, { recursive: true, force: true });
-    mock.restore();
   });
 
   it('registers nothing observable while disabled before activation', () => {
     mockConfig(false);
     const { pi, registerToolCalls, registerCommandCalls, eventBusHandlers, sessionStartHandlers } = makePi();
 
-    registerP2pHub(pi);
+    registerP2pHub(pi, { config });
     expect(sessionStartHandlers).toHaveLength(1); // bootstrap listener only
 
     sessionStartHandlers[0]?.({ type: 'session_start', reason: 'startup' }, makeCtx(cwd));
@@ -93,7 +116,7 @@ describe('registerP2pHub lazy activation', () => {
 
   it('activates exactly once, on the first enabled session', () => {
     const { pi, registerToolCalls, registerCommandCalls, sessionStartHandlers } = makePi();
-    registerP2pHub(pi);
+    registerP2pHub(pi, { config });
 
     mockConfig(false);
     sessionStartHandlers[0]?.({ type: 'session_start', reason: 'startup' }, makeCtx(cwd));
@@ -110,24 +133,106 @@ describe('registerP2pHub lazy activation', () => {
     expect(registerToolCalls).toHaveLength(3);
   });
 
-  it('disabled command handler shows a notice and never opens the modal', async () => {
-    mockConfig(false);
-    const { pi, registerCommandCalls } = makePi();
-    activateP2pHub(pi, makeCtx(cwd));
+  it('preserves one hosted service across reload and restores it through the replacement runtime', async () => {
+    mockConfig(true);
+    const oldRuntime = makePi();
+    const oldWidgetCalls: unknown[] = [];
+    const oldCtx = makeCtx(cwd, { setWidgetCalls: oldWidgetCalls });
+    const oldActivation = activateP2pHub(oldRuntime.pi, oldCtx, { config });
+    await oldActivation.state.createHub('reload-hub');
+    const entryBefore = new (await import('../../../src/extensions/p2p-hub/registry.util')).HubRegistry().read('reload-hub');
 
-    const notifyCalls: { message: string; type?: string }[] = [];
-    const ctx = makeCtx(cwd, { notifyCalls });
-    await registerCommandCalls[0]?.options.handler('', ctx);
+    oldRuntime.sessionShutdownHandlers[0]?.({ type: 'session_shutdown', reason: 'reload' }, oldCtx);
+    expect(oldActivation.state.isConnected()).toBe(true);
+    expect(oldActivation.state.isRuntimeAttached()).toBe(false);
 
-    expect(notifyCalls).toHaveLength(1);
-    expect(notifyCalls[0]?.message).toContain('disabled');
+    const newRuntime = makePi();
+    const newWidgetCalls: unknown[] = [];
+    const newCtx = makeCtx(cwd, { setWidgetCalls: newWidgetCalls });
+    const replacement = activateP2pHub(newRuntime.pi, newCtx, { config });
+    const entryAfter = new (await import('../../../src/extensions/p2p-hub/registry.util')).HubRegistry().read('reload-hub');
+
+    expect(replacement.state).toBe(oldActivation.state);
+    expect(resolveP2pHubService()).toBe(oldActivation.state);
+    expect(replacement.state.getRole()).toBe('host');
+    expect(entryAfter?.port).toBe(entryBefore?.port);
+    expect(oldWidgetCalls.some(call => Array.isArray(call) && call[1] === undefined)).toBe(true);
+    expect(newWidgetCalls.some(call => Array.isArray(call) && call[1] !== undefined)).toBe(true);
   });
 
-  it('a mid-process disable disconnects a live hub and clears the widget', async () => {
+  it('preserves one client membership across new, resume, and fork runtime transitions', async () => {
+    mockConfig(true);
+    const registry = new HubRegistry();
+    const host = new P2pHubState(makeStateDeps('transition-host', registry));
+    await host.createHub('transition-hub');
+    const entry = registry.read('transition-hub');
+    if (!entry) throw new Error('missing transition hub');
+
+    let runtime = makePi();
+    let ctx = makeCtx(cwd);
+    let activation = activateP2pHub(runtime.pi, ctx, { config });
+    await activation.state.joinHub(entry);
+    const assignedName = activation.state.getSelfName();
+
+    for (const reason of ['new', 'resume', 'fork']) {
+      runtime.sessionShutdownHandlers[0]?.({ type: 'session_shutdown', reason }, ctx);
+      const replacementRuntime = makePi();
+      const replacementCtx = makeCtx(cwd);
+      const replacement = activateP2pHub(replacementRuntime.pi, replacementCtx, { config });
+
+      expect(replacement.state).toBe(activation.state);
+      expect(replacement.state.getRole()).toBe('client');
+      expect(replacement.state.getSelfName()).toBe(assignedName);
+      expect(host.getRoster().filter(member => member.identity.name === assignedName)).toHaveLength(1);
+
+      runtime = replacementRuntime;
+      ctx = replacementCtx;
+      activation = replacement;
+    }
+
+    host.dispose();
+  });
+
+  it('a disabled replacement deliberately disposes a preserved service', async () => {
+    mockConfig(true);
+    const oldRuntime = makePi();
+    const oldCtx = makeCtx(cwd);
+    const activation = activateP2pHub(oldRuntime.pi, oldCtx, { config });
+    await activation.state.createHub('disabled-replacement-hub');
+    oldRuntime.sessionShutdownHandlers[0]?.({ type: 'session_shutdown', reason: 'reload' }, oldCtx);
+
+    mockConfig(false);
+    const replacement = makePi();
+    const widgetCalls: unknown[] = [];
+    registerP2pHub(replacement.pi, { config });
+    replacement.sessionStartHandlers[0]?.({ type: 'session_start', reason: 'startup' }, makeCtx(cwd, { setWidgetCalls: widgetCalls }));
+
+    expect(activation.state.isConnected()).toBe(false);
+    expect(resolveP2pHubService()).toBeUndefined();
+    expect(replacement.registerToolCalls).toHaveLength(0);
+    expect(widgetCalls.some(call => Array.isArray(call) && call[1] === undefined)).toBe(true);
+  });
+
+  it('final quit disposes the process service immediately', async () => {
+    mockConfig(true);
+    const runtime = makePi();
+    const ctx = makeCtx(cwd);
+    const activation = activateP2pHub(runtime.pi, ctx, { config });
+    await activation.state.createHub('quit-hub');
+
+    runtime.sessionShutdownHandlers[0]?.({ type: 'session_shutdown', reason: 'quit' }, ctx);
+
+    expect(activation.state.isConnected()).toBe(false);
+    expect(resolveP2pHubService()).toBeUndefined();
+  });
+
+  it('a disabled replacement session disposes a live hub and clears the widget', async () => {
     mockConfig(true);
     const { pi, sessionStartHandlers } = makePi();
-    const initialCtx = makeCtx(cwd);
-    const { state } = activateP2pHub(pi, initialCtx);
+    registerP2pHub(pi, { config });
+    sessionStartHandlers[0]?.({ type: 'session_start', reason: 'startup' }, makeCtx(cwd));
+    const state = resolveP2pHubService();
+    if (!state) throw new Error('missing p2p service');
 
     await state.createHub('ext-test-hub');
     expect(state.isConnected()).toBe(true);
@@ -137,13 +242,9 @@ describe('registerP2pHub lazy activation', () => {
     mockConfig(false);
     const setWidgetCalls: unknown[] = [];
     const disabledCtx = makeCtx(cwd, { setWidgetCalls });
-    // activateP2pHub was called directly (bypassing registerP2pHub's bootstrap),
-    // so its own session_start listener is the only one registered.
     sessionStartHandlers[0]?.({ type: 'session_start', reason: 'startup' }, disabledCtx);
 
     expect(state.isConnected()).toBe(false);
     expect(setWidgetCalls.some(call => Array.isArray(call) && call[1] === undefined)).toBe(true);
-
-    state.dispose();
   });
 });

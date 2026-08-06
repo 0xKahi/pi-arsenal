@@ -1,94 +1,72 @@
-import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import { beforeEach, describe, expect, it } from 'bun:test';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
-import type { ConfigLoadResult } from '../../../src/config/config-loader';
+import type { ConfigProvider } from '../../../src/config/config-loader';
 import { registerTmuxPopup } from '../../../src/extensions/tmux-popup/tmux-popup.extension';
 import type { createTmuxPopupTool } from '../../../src/extensions/tmux-popup/tmux-popup.tool';
 
+type SessionStartHandler = (event: { type: 'session_start'; reason: 'startup' }, ctx: ExtensionContext) => void;
+
 describe('registerTmuxPopup', () => {
   let registerToolCalls: unknown[] = [];
-  let notifyCalls: { message: string; type?: 'info' | 'warning' | 'error' }[] = [];
 
-  const createPi = (): ExtensionAPI =>
-    ({
-      registerTool: (tool: unknown) => {
-        registerToolCalls.push(tool);
+  const createPi = () => {
+    const sessionStartHandlers: SessionStartHandler[] = [];
+    const pi = {
+      registerTool: (tool: unknown) => registerToolCalls.push(tool),
+      on: (event: string, handler: SessionStartHandler) => {
+        if (event === 'session_start') sessionStartHandlers.push(handler);
       },
-      on: () => {},
-    }) as unknown as ExtensionAPI;
+    } as unknown as ExtensionAPI;
+    return { pi, sessionStartHandlers };
+  };
 
-  const createCtx = (trusted = true): ExtensionContext =>
+  const createCtx = (): ExtensionContext =>
     ({
       cwd: '/tmp/project',
-      isProjectTrusted: () => trusted,
-      ui: { notify: (message: string, type?: 'info' | 'warning' | 'error') => notifyCalls.push({ message, type }) },
+      isProjectTrusted: () => true,
+      ui: { notify: () => {} },
     }) as unknown as ExtensionContext;
+
+  let enabled = false;
+  const config: ConfigProvider = {
+    getP2pHub: () => ({ enabled: false, layout: 'inline' }),
+    getTmuxPopup: () => ({ enabled, width: 50, height: 50, fileCommand: 'nvim' }),
+  };
 
   beforeEach(() => {
     registerToolCalls = [];
-    notifyCalls = [];
+    enabled = false;
   });
 
-  it('does not register the tool when disabled', () => {
-    mock.module('../../../src/config/config-loader', () => ({
-      ConfigLoader: {
-        load: (): ConfigLoadResult => ({
-          success: true,
-          config: { tmux_popup: { enabled: false, width: 50, height: 50, fileCommand: 'nvim' }, p2p_hub: { enabled: false, layout: 'inline' } },
-        }),
-      },
-    }));
+  it('registers nothing observable while disabled', () => {
+    const { pi, sessionStartHandlers } = createPi();
+    registerTmuxPopup(pi, { config });
 
-    registerTmuxPopup(createPi(), createCtx());
+    sessionStartHandlers[0]?.({ type: 'session_start', reason: 'startup' }, createCtx());
+
     expect(registerToolCalls).toHaveLength(0);
   });
 
-  it('registers the tool when enabled', () => {
-    mock.module('../../../src/config/config-loader', () => ({
-      ConfigLoader: {
-        load: (): ConfigLoadResult => ({
-          success: true,
-          config: { tmux_popup: { enabled: true, width: 50, height: 50, fileCommand: 'nvim' }, p2p_hub: { enabled: false, layout: 'inline' } },
-        }),
-      },
-    }));
+  it('activates on the first enabled session', () => {
+    const { pi, sessionStartHandlers } = createPi();
+    registerTmuxPopup(pi, { config });
+    enabled = true;
 
-    registerTmuxPopup(createPi(), createCtx());
+    sessionStartHandlers[0]?.({ type: 'session_start', reason: 'startup' }, createCtx());
+
     expect(registerToolCalls).toHaveLength(1);
-    const tool = registerToolCalls[0];
-    if (tool) {
-      expect((tool as ReturnType<typeof createTmuxPopupTool>).name).toBe('tmux_popup');
-    }
+    expect((registerToolCalls[0] as ReturnType<typeof createTmuxPopupTool>).name).toBe('tmux_popup');
   });
 
-  it('notifies on invalid configuration', () => {
-    mock.module('../../../src/config/config-loader', () => ({
-      ConfigLoader: {
-        load: (): ConfigLoadResult => ({ success: false, error: 'Invalid dimensions' }),
-      },
-    }));
+  it('registers surfaces only once per runtime', () => {
+    const { pi, sessionStartHandlers } = createPi();
+    registerTmuxPopup(pi, { config });
 
-    registerTmuxPopup(createPi(), createCtx());
-    expect(registerToolCalls).toHaveLength(0);
-    expect(notifyCalls).toHaveLength(1);
-    const notification = notifyCalls[0];
-    if (notification) {
-      expect(notification.type).toBe('error');
-    }
-  });
+    sessionStartHandlers[0]?.({ type: 'session_start', reason: 'startup' }, createCtx());
+    enabled = true;
+    sessionStartHandlers[0]?.({ type: 'session_start', reason: 'startup' }, createCtx());
+    sessionStartHandlers[0]?.({ type: 'session_start', reason: 'startup' }, createCtx());
 
-  it('re-registers the tool on each session rebind', () => {
-    mock.module('../../../src/config/config-loader', () => ({
-      ConfigLoader: {
-        load: (): ConfigLoadResult => ({
-          success: true,
-          config: { tmux_popup: { enabled: true, width: 50, height: 50, fileCommand: 'nvim' }, p2p_hub: { enabled: false, layout: 'inline' } },
-        }),
-      },
-    }));
-
-    // Simulate pi rebinding extensions for a new session: fresh pi mock per call
-    registerTmuxPopup(createPi(), createCtx());
-    registerTmuxPopup(createPi(), createCtx());
-    expect(registerToolCalls).toHaveLength(2);
+    expect(registerToolCalls).toHaveLength(1);
   });
 });

@@ -23,3 +23,5 @@ export const RECONNECT_RETRY_MS = 2000;
 export const PEEK_TIMEOUT_MS = 3000;
 /** Maximum time an open client transport may wait for an authoritative welcome. */
 export const WELCOME_TIMEOUT_MS = 3000;
+/** Maximum time a process-scoped connection may remain without a runtime binding. */
+export const RUNTIME_HANDOFF_TIMEOUT_MS = 5000;
