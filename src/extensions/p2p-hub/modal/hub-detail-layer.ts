@@ -36,9 +36,11 @@ export class HubDetailLayer implements ModalLayer {
         this.lines = [this.theme.fg('error', 'Hub is unreachable.')];
       } else {
         const roster: P2pRosterEntry[] = [];
-        if (snapshot.host) roster.push({ identity: snapshot.host, status: snapshot.statuses[snapshot.host.name], role: 'host', isSelf: false });
+        if (snapshot.host) {
+          roster.push({ identity: snapshot.host, status: snapshot.statuses[snapshot.host.name], connectionType: 'host', isSelf: false });
+        }
         for (const client of snapshot.clients) {
-          roster.push({ identity: client, status: snapshot.statuses[client.name], role: 'client', isSelf: false });
+          roster.push({ identity: client, status: snapshot.statuses[client.name], connectionType: 'client', isSelf: false });
         }
         this.lines = this.rosterLines(roster);
       }
@@ -48,7 +50,7 @@ export class HubDetailLayer implements ModalLayer {
 
   private rosterLines(roster: P2pRosterEntry[]): string[] {
     const lines: string[] = [];
-    const host = roster.find(r => r.role === 'host');
+    const host = roster.find(r => r.connectionType === 'host');
     const clients = roster.filter(r => r !== host);
 
     lines.push(this.theme.fg('accent', `Hub: ${this.entry.name}`), '');

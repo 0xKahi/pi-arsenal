@@ -14,8 +14,8 @@ export function createP2pLsTool(state: P2pHubState): ToolDefinition<typeof p2pLs
     name: P2pLsToolName,
     label: 'p2p ls',
     description:
-      'List agents connected to the current p2p communication hub, with role, canonical model ID, status, cwd, description, and context usage.',
-    promptSnippet: 'p2p_ls(): list connected p2p-hub agents with role, status, cwd, and context usage',
+      'List agents connected to the current p2p communication hub, with connection type, modelID, status, cwd, description, and context usage.',
+    promptSnippet: 'p2p_ls(): list connected p2p-hub agents with connection type, status, cwd, and context usage',
     parameters: p2pLsSchema,
     async execute(): Promise<AgentToolResult<Record<string, unknown>>> {
       if (!state.isConnected()) return notConnectedResult();
@@ -35,7 +35,7 @@ export function createP2pLsTool(state: P2pHubState): ToolDefinition<typeof p2pLs
 function renderMember(entry: P2pRosterEntry) {
   return {
     name: entry.identity.name,
-    role: entry.role,
+    connectionType: entry.connectionType,
     isSelf: entry.isSelf,
     model: entry.identity.model,
     status: entry.status ? FormatUtil.formatStatus(entry.status) : undefined,
@@ -52,7 +52,7 @@ function renderLine(entry: P2pRosterEntry): string {
   const contextNumeric = entry.identity.context ? FormatUtil.formatContextNumeric(entry.identity.context) : '';
   const contextBar = entry.identity.context ? FormatUtil.formatContextBar(entry.identity.context) : '';
   const context = contextNumeric ? `  ${contextNumeric} ${contextBar}` : '';
-  let line = `  • ${entry.identity.name}${marker} [${entry.role}]${model}${status}${context}`;
+  let line = `  • ${entry.identity.name}${marker} [${entry.connectionType}]${model}${status}${context}`;
   if (entry.identity.description) line += `\n    ${entry.identity.description}`;
   if (entry.identity.cwd) line += `\n    cwd: ${entry.identity.cwd}`;
   return line;
