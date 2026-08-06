@@ -1,3 +1,5 @@
+import { dye } from '@0xkahi/cli-dye';
+import { COMMON_COLORS } from '../../constants';
 import type { P2pContextSnapshot, P2pStatus } from './protocol.types';
 
 export class FormatUtil {
@@ -38,8 +40,8 @@ export class FormatUtil {
   static formatContextBar(c: P2pContextSnapshot | null | undefined, width = 15): string {
     const percent = FormatUtil.contextPercent(c);
     const filled = Math.round((percent / 100) * width);
-    const bar = `${'#'.repeat(filled)}${'-'.repeat(Math.max(0, width - filled))}`;
-    return `[${bar}] ${percent}%`;
+    const bar = `${dye.colorize('#'.repeat(filled), { fg: 'brightBlue' })}${'-'.repeat(Math.max(0, width - filled))}`;
+    return `${dye.colorize('[', { fg: dye.hex(COMMON_COLORS.orange) })}${bar}${dye.colorize(']', { fg: dye.hex(COMMON_COLORS.orange) })} ${dye.colorize(`${percent}%`, { fg: dye.hex(COMMON_COLORS.shinyCyan) })}`;
   }
 
   static statusDot(status: P2pStatus | undefined): string {

@@ -32,7 +32,7 @@ const keybindings = {
 function makeDeps(overrides: Partial<P2pHubStateDeps> & { name: string; registry: HubRegistry }): P2pHubStateDeps {
   return {
     identity: { name: overrides.name, description: undefined, cwd: `/tmp/${overrides.name}` },
-    getModelName: () => 'test-model',
+    getModelId: () => 'gpt-5.6-sol',
     getContextSnapshot: () => ({ tokens: 1000, contextWindow: 10000 }),
     isIdle: () => true,
     deliverBatch: () => {},

@@ -73,6 +73,7 @@ export interface StatusUpdateMsg {
   type: 'status_update';
   name: string;
   status: P2pStatus;
+  /** Canonical Pi model ID when present. */
   model?: string;
   /** Absent = no change; null = clear stored value; object = store. */
   context?: P2pContextSnapshot | null;

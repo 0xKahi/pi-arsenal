@@ -44,7 +44,8 @@ export interface P2pRosterEntry {
 export interface P2pHubStateDeps {
   registry: HubRegistry;
   identity: { name: string; description: string | undefined; cwd: string };
-  getModelName: () => string | undefined;
+  /** Canonical Pi model ID for the active model. */
+  getModelId: () => string | undefined;
   getContextSnapshot: () => P2pContextSnapshot | undefined;
   isIdle: () => boolean;
   /** Deliver a batch of triggerTurn:true messages once idle. */
@@ -206,7 +207,7 @@ export class P2pHubState {
   private selfIdentity(): P2pIdentity {
     return {
       name: this.selfName,
-      model: this.deps.getModelName(),
+      model: this.deps.getModelId(),
       description: this.deps.identity.description,
       cwd: this.deps.identity.cwd,
       context: this.deps.getContextSnapshot(),
@@ -243,7 +244,7 @@ export class P2pHubState {
       type: 'status_update',
       name: this.selfName,
       status,
-      model: this.deps.getModelName(),
+      model: this.deps.getModelId(),
       context: this.deps.getContextSnapshot() ?? null,
     };
     if (this.role === 'host') {
@@ -592,7 +593,7 @@ export class P2pHubState {
         const register: RegisterMsg = {
           type: 'register',
           name: this.selfName,
-          model: this.deps.getModelName(),
+          model: this.deps.getModelId(),
           description: this.deps.identity.description,
           cwd: this.deps.identity.cwd,
           context: this.deps.getContextSnapshot(),

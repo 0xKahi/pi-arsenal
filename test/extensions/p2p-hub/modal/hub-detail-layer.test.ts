@@ -16,7 +16,7 @@ const theme = {
 function makeDeps(overrides: Partial<P2pHubStateDeps> & { name: string; registry: HubRegistry }): P2pHubStateDeps {
   return {
     identity: { name: overrides.name, description: undefined, cwd: `/tmp/${overrides.name}` },
-    getModelName: () => 'test-model',
+    getModelId: () => 'gpt-5.6-sol',
     getContextSnapshot: () => ({ tokens: 45_000, contextWindow: 272_000 }),
     isIdle: () => true,
     deliverBatch: () => {},
@@ -80,7 +80,7 @@ describe('HubDetailLayer', () => {
     expect(rendered).toContain('Hub: detail-hub');
     expect(rendered).toContain('host-a');
     expect(rendered).toContain('client-a');
-    expect(rendered).toContain('test-model');
+    expect(rendered).toContain('gpt-5.6-sol');
 
     // The viewer must not have joined as a member.
     expect(host.getRoster().map(r => r.identity.name)).not.toContain('viewer');

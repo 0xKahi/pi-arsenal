@@ -29,7 +29,7 @@ export function activateP2pHub(pi: ExtensionAPI, initialCtx: ExtensionContext): 
   const state = new P2pHubState({
     registry,
     identity: { name: identity.name, description: identity.description, cwd: initialCtx.cwd },
-    getModelName: () => latestCtx.model?.name,
+    getModelId: () => latestCtx.model?.id,
     getContextSnapshot: () => {
       const usage = latestCtx.getContextUsage();
       if (!usage || usage.contextWindow <= 0) return undefined;
