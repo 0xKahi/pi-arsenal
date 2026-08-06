@@ -154,7 +154,7 @@ describe('registerP2pHub lazy activation', () => {
 
     expect(replacement.state).toBe(oldActivation.state);
     expect(resolveP2pHubService()).toBe(oldActivation.state);
-    expect(replacement.state.getRole()).toBe('host');
+    expect(replacement.state.getConnectionType()).toBe('host');
     expect(entryAfter?.port).toBe(entryBefore?.port);
     expect(oldWidgetCalls.some(call => Array.isArray(call) && call[1] === undefined)).toBe(true);
     expect(newWidgetCalls.some(call => Array.isArray(call) && call[1] !== undefined)).toBe(true);
@@ -181,7 +181,7 @@ describe('registerP2pHub lazy activation', () => {
       const replacement = activateP2pHub(replacementRuntime.pi, replacementCtx, { config });
 
       expect(replacement.state).toBe(activation.state);
-      expect(replacement.state.getRole()).toBe('client');
+      expect(replacement.state.getConnectionType()).toBe('client');
       expect(replacement.state.getSelfName()).toBe(assignedName);
       expect(host.getRoster().filter(member => member.identity.name === assignedName)).toHaveLength(1);
 

@@ -4,10 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { P2pHubState, type P2pHubStateDeps } from '../../../../src/extensions/p2p-hub/p2p-hub-state';
 import { HubRegistry } from '../../../../src/extensions/p2p-hub/registry.util';
-import { PathUtil } from '../../../../src/utils/path.util';
 import { createP2pAskTool } from '../../../../src/extensions/p2p-hub/tools/p2p-ask.tool';
 import { createP2pLsTool } from '../../../../src/extensions/p2p-hub/tools/p2p-ls.tool';
 import { createP2pSendTool } from '../../../../src/extensions/p2p-hub/tools/p2p-send.tool';
+import { PathUtil } from '../../../../src/utils/path.util';
 
 function makeDeps(overrides: Partial<P2pHubStateDeps> & { name: string; registry: HubRegistry }): P2pHubStateDeps {
   return {
@@ -107,7 +107,7 @@ describe('p2p-hub tools', () => {
     expect(result.details.error).toBe('not_connected');
   });
 
-  test('p2p_ls reports actual roles and separate self markers for clients and hosts', async () => {
+  test('p2p_ls reports actual connection types and separate self markers for clients and hosts', async () => {
     const { host, client } = await connectedPair('ls-hub');
     const clientResult = await createP2pLsTool(client).execute('id', {}, undefined, undefined, undefined as never);
     const clientText = clientResult.content[0]?.type === 'text' ? clientResult.content[0].text : '';
@@ -117,10 +117,11 @@ describe('p2p-hub tools', () => {
     expect(clientText).toContain('%');
     expect(clientResult.details.members).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: 'host-a', role: 'host', isSelf: false, model: 'gpt-5.6-sol' }),
-        expect.objectContaining({ name: 'client-a', role: 'client', isSelf: true, model: 'gpt-5.6-sol' }),
+        expect.objectContaining({ name: 'host-a', connectionType: 'host', isSelf: false, model: 'gpt-5.6-sol' }),
+        expect.objectContaining({ name: 'client-a', connectionType: 'client', isSelf: true, model: 'gpt-5.6-sol' }),
       ]),
     );
+    expect((clientResult.details.members as Record<string, unknown>[]).every(member => !('role' in member))).toBe(true);
 
     const hostResult = await createP2pLsTool(host).execute('id', {}, undefined, undefined, undefined as never);
     const hostText = hostResult.content[0]?.type === 'text' ? hostResult.content[0].text : '';
@@ -128,10 +129,11 @@ describe('p2p-hub tools', () => {
     expect(hostText).toContain('client-a [client]');
     expect(hostResult.details.members).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: 'host-a', role: 'host', isSelf: true }),
-        expect.objectContaining({ name: 'client-a', role: 'client', isSelf: false }),
+        expect.objectContaining({ name: 'host-a', connectionType: 'host', isSelf: true }),
+        expect.objectContaining({ name: 'client-a', connectionType: 'client', isSelf: false }),
       ]),
     );
+    expect((hostResult.details.members as Record<string, unknown>[]).every(member => !('role' in member))).toBe(true);
   });
 
   test('p2p_ls returns not-connected error when disconnected', async () => {

@@ -33,12 +33,12 @@ import {
 } from './protocol.types';
 import { HubRegistry, type HubRegistryEntry, isEntryLive } from './registry.util';
 
-export type P2pRole = 'host' | 'client' | 'disconnected';
+export type P2pConnectionType = 'host' | 'client' | 'disconnected';
 
 export interface P2pRosterEntry {
   identity: P2pIdentity;
   status: P2pStatus | undefined;
-  role: 'host' | 'client';
+  connectionType: 'host' | 'client';
   isSelf: boolean;
 }
 
@@ -82,7 +82,7 @@ export type SendChatResult = { success: true } | { success: false; error: string
  * process, created once during lazy activation.
  */
 export class P2pHubState {
-  private role: P2pRole = 'disconnected';
+  private connectionType: P2pConnectionType = 'disconnected';
   private selfName: string;
   private hubName: string | undefined;
   private hubPort: number | undefined;
@@ -194,8 +194,8 @@ export class P2pHubState {
 
   // ── Public accessors ────────────────────────────────────────────────────
 
-  public getRole(): P2pRole {
-    return this.role;
+  public getConnectionType(): P2pConnectionType {
+    return this.connectionType;
   }
 
   public getHubName(): string | undefined {
@@ -207,24 +207,29 @@ export class P2pHubState {
   }
 
   public isConnected(): boolean {
-    return this.role !== 'disconnected';
+    return this.connectionType !== 'disconnected';
   }
 
   public getRoster(): P2pRosterEntry[] {
-    if (this.role === 'disconnected') return [];
+    if (this.connectionType === 'disconnected') return [];
     const roster: P2pRosterEntry[] = [
-      { identity: this.selfIdentity(), status: this.deriveStatus(), role: this.role === 'host' ? 'host' : 'client', isSelf: true },
+      {
+        identity: this.selfIdentity(),
+        status: this.deriveStatus(),
+        connectionType: this.connectionType === 'host' ? 'host' : 'client',
+        isSelf: true,
+      },
     ];
-    if (this.role === 'host') {
+    if (this.connectionType === 'host') {
       for (const [name, identity] of this.hubIdentities) {
-        roster.push({ identity, status: this.hubStatuses.get(name), role: 'client', isSelf: false });
+        roster.push({ identity, status: this.hubStatuses.get(name), connectionType: 'client', isSelf: false });
       }
     } else {
       for (const [name, identity] of this.members) {
         roster.push({
           identity,
           status: this.statuses.get(name),
-          role: name === this.clientHostName ? 'host' : 'client',
+          connectionType: name === this.clientHostName ? 'host' : 'client',
           isSelf: false,
         });
       }
@@ -315,7 +320,7 @@ export class P2pHubState {
   }
 
   private pushStatus(force = false): void {
-    if (this.role === 'disconnected') return;
+    if (this.connectionType === 'disconnected') return;
     const status = this.deriveStatus();
     const newTool = status.kind === 'tool' ? status.toolName : null;
     if (!force && status.kind === this.lastPushedKind && newTool === this.lastPushedTool) return;
@@ -328,7 +333,7 @@ export class P2pHubState {
       model: this.runtimeFor()?.getModelId(),
       context: this.runtimeFor()?.getContextSnapshot() ?? null,
     };
-    if (this.role === 'host') {
+    if (this.connectionType === 'host') {
       this.hubBroadcast(msg);
     } else if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
@@ -369,9 +374,9 @@ export class P2pHubState {
       this.keepaliveTimer = null;
     }
     const priorHubName = this.hubName;
-    const priorRole = this.role;
+    const priorConnectionType = this.connectionType;
 
-    if (priorRole === 'host') {
+    if (priorConnectionType === 'host') {
       for (const clientWs of this.hubClients.keys()) {
         try {
           clientWs.close();
@@ -402,7 +407,7 @@ export class P2pHubState {
       this.ws = null;
     }
 
-    this.role = 'disconnected';
+    this.connectionType = 'disconnected';
     this.hubName = undefined;
     this.hubPort = undefined;
     this.clientHostName = undefined;
@@ -440,7 +445,7 @@ export class P2pHubState {
           const port = typeof address === 'object' && address !== null ? address.port : (preferredPort ?? 0);
 
           this.server = server;
-          this.role = 'host';
+          this.connectionType = 'host';
           this.hubName = name;
           this.hubPort = port;
           this.manuallyDisconnected = false;
@@ -635,7 +640,7 @@ export class P2pHubState {
 
       const resetPartialState = () => {
         if (this.ws === socket) this.ws = null;
-        this.role = 'disconnected';
+        this.connectionType = 'disconnected';
         this.hubName = undefined;
         this.hubPort = undefined;
         this.clientHostName = undefined;
@@ -706,13 +711,13 @@ export class P2pHubState {
           finishFailure(this.disposed ? 'disposed' : 'connection closed before welcome');
           return;
         }
-        const wasClient = this.role === 'client';
+        const wasClient = this.connectionType === 'client';
         if (this.ws === socket) this.ws = null;
         if (this.disposed) return;
         if (wasClient) {
           const lostHubName = this.hubName;
           const lostPort = this.hubPort;
-          this.role = 'disconnected';
+          this.connectionType = 'disconnected';
           this.hubName = undefined;
           this.hubPort = undefined;
           this.clientHostName = undefined;
@@ -737,7 +742,7 @@ export class P2pHubState {
     const delay = PROMOTION_BASE_DELAY_MS + Math.random() * PROMOTION_JITTER_MS;
     this.promotionTimer = setTimeout(() => {
       this.promotionTimer = null;
-      if (this.disposed || this.manuallyDisconnected || this.role !== 'disconnected') return;
+      if (this.disposed || this.manuallyDisconnected || this.connectionType !== 'disconnected') return;
       void this.attemptPromotion(hubName, port);
     }, delay);
   }
@@ -753,7 +758,7 @@ export class P2pHubState {
     if (!rejoin.success) {
       setTimeout(
         () => {
-          if (!this.disposed && !this.manuallyDisconnected && this.role === 'disconnected') {
+          if (!this.disposed && !this.manuallyDisconnected && this.connectionType === 'disconnected') {
             this.schedulePromotion(hubName, port);
           }
         },
@@ -795,7 +800,7 @@ export class P2pHubState {
     switch (msg.type) {
       case 'welcome': {
         this.selfName = msg.assignedName;
-        this.role = 'client';
+        this.connectionType = 'client';
         this.clientHostName = msg.host.name;
         this.members.clear();
         this.statuses.clear();
@@ -890,13 +895,13 @@ export class P2pHubState {
     }
   }
 
-  /** Send a chat/prompt-shaped message from this node, routing per role. */
+  /** Send a chat/prompt-shaped message from this node, routing per connection type. */
   private sendChatLikeMessage(msg: ChatMsg | PromptRequestMsg | PromptResponseMsg): boolean {
-    if (this.role === 'host') {
+    if (this.connectionType === 'host') {
       this.routeAsHost(msg);
       return true;
     }
-    if (this.role === 'client' && this.ws?.readyState === WebSocket.OPEN) {
+    if (this.connectionType === 'client' && this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
       return true;
     }

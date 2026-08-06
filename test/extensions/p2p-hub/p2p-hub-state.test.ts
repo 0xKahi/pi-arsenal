@@ -48,7 +48,7 @@ describe('P2pHubState', () => {
     const host = spawn('host-a');
     const result = await host.createHub('team-a');
     expect(result.success).toBe(true);
-    expect(host.getRole()).toBe('host');
+    expect(host.getConnectionType()).toBe('host');
     expect(host.getHubName()).toBe('team-a');
     expect(registry.exists('team-a')).toBe(true);
   });
@@ -72,16 +72,16 @@ describe('P2pHubState', () => {
     const client = spawn('client-a');
     const join = await client.joinHub(entry);
     expect(join.success).toBe(true);
-    expect(client.getRole()).toBe('client');
+    expect(client.getConnectionType()).toBe('client');
 
     const hostRoster = host.getRoster();
     const clientRoster = client.getRoster();
     expect(hostRoster.map(r => r.identity.name).sort()).toEqual(['client-a', 'host-a']);
     expect(clientRoster.map(r => r.identity.name).sort()).toEqual(['client-a', 'host-a']);
-    expect(hostRoster.find(r => r.identity.name === 'host-a')).toMatchObject({ role: 'host', isSelf: true });
-    expect(hostRoster.find(r => r.identity.name === 'client-a')).toMatchObject({ role: 'client', isSelf: false });
-    expect(clientRoster.find(r => r.identity.name === 'host-a')).toMatchObject({ role: 'host', isSelf: false });
-    expect(clientRoster.find(r => r.identity.name === 'client-a')).toMatchObject({ role: 'client', isSelf: true });
+    expect(hostRoster.find(r => r.identity.name === 'host-a')).toMatchObject({ connectionType: 'host', isSelf: true });
+    expect(hostRoster.find(r => r.identity.name === 'client-a')).toMatchObject({ connectionType: 'client', isSelf: false });
+    expect(clientRoster.find(r => r.identity.name === 'host-a')).toMatchObject({ connectionType: 'host', isSelf: false });
+    expect(clientRoster.find(r => r.identity.name === 'client-a')).toMatchObject({ connectionType: 'client', isSelf: true });
   });
 
   test('canonical model IDs survive registration, welcome snapshots, status updates, roster access, and peeks', async () => {
@@ -108,7 +108,7 @@ describe('P2pHubState', () => {
     expect(peek?.clients.find(member => member.name === 'client-model')?.model).toBe('gpt-5.7-sol');
   });
 
-  test('a joining client immediately receives the host and all existing clients with explicit roles', async () => {
+  test('a joining client immediately receives the host and all existing clients with explicit connection types', async () => {
     const host = spawn('host-a');
     await host.createHub('topology-hub');
     const entry = registry.read('topology-hub');
@@ -119,11 +119,13 @@ describe('P2pHubState', () => {
     const result = await clientB.joinHub(entry);
 
     expect(result.success).toBe(true);
-    expect(clientB.getRoster().map(member => ({ name: member.identity.name, role: member.role, isSelf: member.isSelf }))).toEqual([
-      { name: 'client-b', role: 'client', isSelf: true },
-      { name: 'host-a', role: 'host', isSelf: false },
-      { name: 'client-a', role: 'client', isSelf: false },
-    ]);
+    expect(clientB.getRoster().map(member => ({ name: member.identity.name, connectionType: member.connectionType, isSelf: member.isSelf }))).toEqual(
+      [
+        { name: 'client-b', connectionType: 'client', isSelf: true },
+        { name: 'host-a', connectionType: 'host', isSelf: false },
+        { name: 'client-a', connectionType: 'client', isSelf: false },
+      ],
+    );
   });
 
   test('join fails cleanly when an open transport never sends welcome', async () => {
@@ -143,7 +145,7 @@ describe('P2pHubState', () => {
     });
 
     expect(result).toEqual({ success: false, error: 'welcome handshake timed out' });
-    expect(client.getRole()).toBe('disconnected');
+    expect(client.getConnectionType()).toBe('disconnected');
     expect(client.getHubName()).toBeUndefined();
     expect(client.getRoster()).toEqual([]);
     await new Promise<void>(resolve => server.close(() => resolve()));
@@ -271,7 +273,7 @@ describe('P2pHubState', () => {
     expect(registry.exists('team-j')).toBe(true);
     host.disconnect('manual');
     expect(registry.exists('team-j')).toBe(false);
-    expect(host.getRole()).toBe('disconnected');
+    expect(host.getConnectionType()).toBe('disconnected');
   });
 
   test('member_left fires when a client disconnects, and roster updates on the host', async () => {
@@ -406,7 +408,7 @@ describe('P2pHubState', () => {
     // Wait past the promotion jitter window for the client to win the race.
     await Bun.sleep(3000);
 
-    expect(client.getRole()).toBe('host');
+    expect(client.getConnectionType()).toBe('host');
     expect(client.getHubName()).toBe('team-l');
     const promoted = registry.read('team-l');
     expect(promoted?.port).toBe(originalPort);
