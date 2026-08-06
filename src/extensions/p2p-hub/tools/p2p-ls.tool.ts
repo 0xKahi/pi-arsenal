@@ -13,7 +13,8 @@ export function createP2pLsTool(state: P2pHubState): ToolDefinition<typeof p2pLs
   return {
     name: P2pLsToolName,
     label: 'p2p ls',
-    description: 'List agents connected to the current p2p hub, with role, model, status, cwd, description, and context usage.',
+    description:
+      'List agents connected to the current p2p communication hub, with role, canonical model ID, status, cwd, description, and context usage.',
     promptSnippet: 'p2p_ls(): list connected p2p-hub agents with role, status, cwd, and context usage',
     parameters: p2pLsSchema,
     async execute(): Promise<AgentToolResult<Record<string, unknown>>> {

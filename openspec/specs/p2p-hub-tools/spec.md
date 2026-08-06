@@ -34,11 +34,11 @@ The system SHALL provide a `p2p_ask` tool that sends a prompt to a named member 
 
 ### Requirement: p2p_ls member listing
 
-The system SHALL provide a `p2p_ls` tool that lists the connected hub's members, including for each: name, actual network role (`host` or `client`), whether it is the calling session, model, status (idle, thinking, or `tool:<name>` with duration), cwd, description when set, and context usage rendered both numerically (e.g. `45K/272K (17%)`) and as a progress bar (e.g. `[###-----------] 17%`). Self-identification SHALL NOT replace or alter the member's host/client role.
+The system SHALL provide a `p2p_ls` tool that lists the connected hub's members, including for each: name, actual network role (`host` or `client`), whether it is the calling session, canonical model ID, status (idle, thinking, or `tool:<name>` with duration), cwd, description when set, and context usage rendered both numerically (e.g. `45K/272K (17%)`) and as a progress bar (e.g. `[###-----------] 17%`). The canonical model ID SHALL be used in both human-readable output and structured member details. Self-identification SHALL NOT replace or alter the member's host/client role.
 
 #### Scenario: Listing members
-- **WHEN** `p2p_ls` is called while connected to a hub with a host and one client
-- **THEN** both members are listed with role, model, status, cwd, and context usage
+- **WHEN** `p2p_ls` is called while connected to a hub whose member uses model ID `gpt-5.6-sol`
+- **THEN** the member is listed with `gpt-5.6-sol`, role, status, cwd, and context usage in both human-readable output and structured details
 
 #### Scenario: Listing as a client
 - **WHEN** `p2p_ls` is called by a client in a hub with one host and two clients

@@ -10,7 +10,7 @@ import { PathUtil } from '../../../src/utils/path.util';
 function makeDeps(overrides: Partial<P2pHubStateDeps> & { name: string; registry: HubRegistry }): P2pHubStateDeps {
   return {
     identity: { name: overrides.name, description: undefined, cwd: `/tmp/${overrides.name}` },
-    getModelName: () => 'test-model',
+    getModelId: () => 'gpt-5.6-sol',
     getContextSnapshot: () => ({ tokens: 1000, contextWindow: 10000 }),
     isIdle: () => true,
     deliverBatch: () => {},
@@ -82,6 +82,30 @@ describe('P2pHubState', () => {
     expect(hostRoster.find(r => r.identity.name === 'client-a')).toMatchObject({ role: 'client', isSelf: false });
     expect(clientRoster.find(r => r.identity.name === 'host-a')).toMatchObject({ role: 'host', isSelf: false });
     expect(clientRoster.find(r => r.identity.name === 'client-a')).toMatchObject({ role: 'client', isSelf: true });
+  });
+
+  test('canonical model IDs survive registration, welcome snapshots, status updates, roster access, and peeks', async () => {
+    let clientModelId = 'gpt-5.6-sol';
+    const host = spawn('host-model', { getModelId: () => 'claude-sonnet-4-5' });
+    await host.createHub('model-hub');
+    const entry = registry.read('model-hub');
+    if (!entry) throw new Error('missing entry');
+    const client = spawn('client-model', { getModelId: () => clientModelId });
+    await client.joinHub(entry);
+    await Bun.sleep(20);
+
+    expect(host.getRoster().find(member => member.identity.name === 'client-model')?.identity.model).toBe('gpt-5.6-sol');
+    expect(client.getRoster().find(member => member.identity.name === 'host-model')?.identity.model).toBe('claude-sonnet-4-5');
+
+    clientModelId = 'gpt-5.7-sol';
+    client.setActiveTool('bash');
+    await Bun.sleep(20);
+    expect(host.getRoster().find(member => member.identity.name === 'client-model')?.identity.model).toBe('gpt-5.7-sol');
+
+    const viewer = spawn('viewer');
+    const peek = await viewer.peek(entry);
+    expect(peek?.host?.model).toBe('claude-sonnet-4-5');
+    expect(peek?.clients.find(member => member.name === 'client-model')?.model).toBe('gpt-5.7-sol');
   });
 
   test('a joining client immediately receives the host and all existing clients with explicit roles', async () => {

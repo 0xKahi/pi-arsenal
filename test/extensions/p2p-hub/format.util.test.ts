@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { FormatUtil } from '../../../src/extensions/p2p-hub/format.util';
+import { dye } from '@0xkahi/cli-dye';
 
 describe('FormatUtil', () => {
   test('formatDuration renders seconds, minutes, and hours', () => {
@@ -28,14 +29,7 @@ describe('FormatUtil', () => {
   });
 
   test('formatContextBar renders a proportional bar with percentage', () => {
-    expect(FormatUtil.formatContextBar({ tokens: 50, contextWindow: 100 }, 10)).toBe('[#####-----] 50%');
-    expect(FormatUtil.formatContextBar(undefined, 10)).toBe('[----------] 0%');
-  });
-
-  test('statusDot maps status kind to a marker', () => {
-    expect(FormatUtil.statusDot(undefined)).toBe('○');
-    expect(FormatUtil.statusDot({ kind: 'idle', since: 0 })).toBe('●');
-    expect(FormatUtil.statusDot({ kind: 'thinking', since: 0 })).toBe('◐');
-    expect(FormatUtil.statusDot({ kind: 'tool', toolName: 'bash', since: 0 })).toBe('◆');
+    expect(dye.strip(FormatUtil.formatContextBar({ tokens: 50, contextWindow: 100 }, 10))).toBe('[#####-----] 50%');
+    expect(dye.strip(FormatUtil.formatContextBar(undefined, 10))).toBe('[----------] 0%');
   });
 });

@@ -12,7 +12,7 @@ import { createP2pSendTool } from '../../../../src/extensions/p2p-hub/tools/p2p-
 function makeDeps(overrides: Partial<P2pHubStateDeps> & { name: string; registry: HubRegistry }): P2pHubStateDeps {
   return {
     identity: { name: overrides.name, description: undefined, cwd: `/tmp/${overrides.name}` },
-    getModelName: () => 'test-model',
+    getModelId: () => 'gpt-5.6-sol',
     getContextSnapshot: () => ({ tokens: 1000, contextWindow: 10000 }),
     isIdle: () => true,
     deliverBatch: () => {},
@@ -113,12 +113,12 @@ describe('p2p-hub tools', () => {
     const clientText = clientResult.content[0]?.type === 'text' ? clientResult.content[0].text : '';
     expect(clientText).toContain('host-a [host]');
     expect(clientText).toContain('client-a (you) [client]');
-    expect(clientText).toContain('test-model');
+    expect(clientText).toContain('gpt-5.6-sol');
     expect(clientText).toContain('%');
     expect(clientResult.details.members).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: 'host-a', role: 'host', isSelf: false }),
-        expect.objectContaining({ name: 'client-a', role: 'client', isSelf: true }),
+        expect.objectContaining({ name: 'host-a', role: 'host', isSelf: false, model: 'gpt-5.6-sol' }),
+        expect.objectContaining({ name: 'client-a', role: 'client', isSelf: true, model: 'gpt-5.6-sol' }),
       ]),
     );
 

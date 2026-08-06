@@ -49,7 +49,7 @@ function makeCtx(cwd: string, opts: { notifyCalls?: { message: string; type?: st
     isProjectTrusted: () => true,
     isIdle: () => true,
     getContextUsage: () => undefined,
-    model: undefined,
+    model: { id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol' } as never,
     ui: {
       notify: (message: string, type?: string) => notifyCalls.push({ message, type }),
       setWidget: (...args: unknown[]) => setWidgetCalls.push(args),
@@ -131,6 +131,8 @@ describe('registerP2pHub lazy activation', () => {
 
     await state.createHub('ext-test-hub');
     expect(state.isConnected()).toBe(true);
+    expect(state.getRoster()[0]?.identity.model).toBe('gpt-5.6-sol');
+    expect(state.getRoster()[0]?.identity.model).not.toBe('GPT-5.6 Sol');
 
     mockConfig(false);
     const setWidgetCalls: unknown[] = [];

@@ -4,8 +4,8 @@ import { safeParseP2pMessage, type WelcomeMsg } from '../../../src/extensions/p2
 const welcome: WelcomeMsg = {
   type: 'welcome',
   assignedName: 'client-a-2',
-  host: { name: 'host-a', model: 'host-model' },
-  clients: [{ name: 'client-a', model: 'client-model' }],
+  host: { name: 'host-a', model: 'claude-sonnet-4-5' },
+  clients: [{ name: 'client-a', model: 'gpt-5.6-sol' }],
   statuses: {
     'host-a': { kind: 'idle', since: 1 },
     'client-a': { kind: 'tool', toolName: 'bash', since: 2 },
@@ -15,6 +15,10 @@ const welcome: WelcomeMsg = {
 describe('p2p welcome protocol', () => {
   test('parses explicit assigned name, host, existing clients, and statuses', () => {
     expect(safeParseP2pMessage(JSON.stringify(welcome))).toEqual(welcome);
+    expect(safeParseP2pMessage(JSON.stringify(welcome))).toMatchObject({
+      host: { model: 'claude-sonnet-4-5' },
+      clients: [{ model: 'gpt-5.6-sol' }],
+    });
   });
 
   test('rejects the former flat member shape and malformed explicit payloads', () => {
