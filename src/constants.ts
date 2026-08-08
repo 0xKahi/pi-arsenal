@@ -4,7 +4,7 @@ export const EXTENSION_ID = 'pi-arsenal';
 
 const SUB_EXTENSION_IDS = {
   tmux_popup: 'tmux_popup',
-  p2p_hub: 'p2p_hub',
+  p2p_council: 'p2p_council',
 } as const;
 
 export type SubExtentionIds = ObjectValues<typeof SUB_EXTENSION_IDS>;
