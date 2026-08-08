@@ -1,5 +1,13 @@
 # @0xkahi/pi-arsenal
 
+## 0.1.1
+
+### Patch Changes
+
+- 03ad9aa: - imrpove p2p hub tools registration
+  - imrpove p2p hub tools preview
+  - improve p2p hub tools renders and output formatting
+
 ## 0.1.0
 
 ### Minor Changes
