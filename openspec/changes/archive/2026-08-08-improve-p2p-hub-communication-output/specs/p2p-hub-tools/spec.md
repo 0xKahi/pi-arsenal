@@ -1,8 +1,4 @@
-## Purpose
-
-Defines the agent-facing tools for pi-to-pi communication over a connected hub: fire-and-forget messaging, synchronous prompt RPC, and member listing.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: p2p_send fire-and-forget messaging
 
@@ -80,6 +76,8 @@ The system SHALL provide a `p2p_ls` tool that lists the connected hub's name and
 - **WHEN** roster identities contain model and context data and network connection classifications
 - **THEN** the `p2p_ls` human-readable output contains none of those diagnostics or context progress bars
 
+## ADDED Requirements
+
 ### Requirement: p2p inbound message presentation
 
 The system SHALL represent inbound peer sends and remote prompts with structured metadata suitable for user rendering while keeping all essential provenance in model-facing textual content. The TUI SHALL distinguish peer messages, delivery behavior, batches, and remote prompts without requiring the model-facing content to contain decorative TUI formatting.
@@ -107,11 +105,3 @@ The system SHALL keep collapsed tool-call previews bounded and SHALL truncate re
 #### Scenario: Oversized remote reply
 - **WHEN** a `p2p_ask` reply exceeds Pi's standard line or byte limit
 - **THEN** the caller receives the retained portion plus an explicit truncation notice rather than an unbounded or silently clipped tool result
-
-### Requirement: Tool behavior while disconnected
-
-While the extension is active, all three tools SHALL remain registered regardless of hub connection state. When invoked without a hub connection, each tool SHALL return a non-throwing error result stating that no hub is connected and directing the caller to `/p2p-hub`.
-
-#### Scenario: Tool called while disconnected
-- **WHEN** `p2p_ls` is invoked and the session is not connected to any hub
-- **THEN** the tool returns an error result indicating no hub connection and referencing the `/p2p-hub` command

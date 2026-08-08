@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { WebSocket, WebSocketServer } from 'ws';
+import type { P2pInboundItem } from './communication-presentation';
 import {
   BATCH_MAX_CHARS,
   BATCH_MAX_ITEMS,
@@ -47,8 +48,8 @@ export interface P2pHubRuntimeBinding {
   getModelId: () => string | undefined;
   getContextSnapshot: () => P2pContextSnapshot | undefined;
   isIdle: () => boolean;
-  /** Deliver a batch of triggerTurn:true messages once idle. */
-  deliverBatch: (batchText: string, count: number) => void;
+  /** Deliver an ordered batch of triggerTurn:true messages once idle. */
+  deliverBatch: (items: P2pInboundItem[]) => void;
   /** Deliver a single triggerTurn:false message as a steer/non-turn message. */
   deliverSteer: (content: string, from: string) => void;
   /** Start a local agent turn for a remote prompt request. */
@@ -933,18 +934,18 @@ export class P2pHubState {
       return;
     }
 
-    const batch: string[] = [];
+    const batch: P2pInboundItem[] = [];
     let totalChars = 0;
     for (let i = 0; i < this.inbox.length && batch.length < BATCH_MAX_ITEMS; i++) {
       const item = this.inbox[i];
       if (!item) break;
-      const text = `From "${item.from}":\n${item.content}`;
-      if (batch.length > 0 && totalChars + text.length > BATCH_MAX_CHARS) break;
-      batch.push(text);
-      totalChars += text.length;
+      const itemChars = item.from.length + item.content.length;
+      if (batch.length > 0 && totalChars + itemChars > BATCH_MAX_CHARS) break;
+      batch.push(item);
+      totalChars += itemChars;
     }
 
-    this.runtimeFor()?.deliverBatch(batch.join('\n\n'), batch.length);
+    this.runtimeFor()?.deliverBatch(batch);
     this.inbox.splice(0, batch.length);
     if (this.inbox.length > 0) this.scheduleFlush(IDLE_RETRY_MS);
   }

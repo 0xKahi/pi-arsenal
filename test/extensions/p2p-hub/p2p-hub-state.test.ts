@@ -321,7 +321,7 @@ describe('P2pHubState', () => {
   });
 
   test('queues trigger-turn and steer chat while detached and rejects prompts temporarily', async () => {
-    const batches: string[] = [];
+    const batches: { from: string; content: string }[][] = [];
     const steers: string[] = [];
     const host = spawn('host-detached');
     await host.createHub('detached-hub');
@@ -342,12 +342,12 @@ describe('P2pHubState', () => {
       makeDeps({
         name: 'host-detached',
         registry,
-        deliverBatch: text => batches.push(text),
+        deliverBatch: items => batches.push(items),
         deliverSteer: content => steers.push(content),
       }),
     );
     await Bun.sleep(20);
-    expect(batches.join('\n')).toContain('turn later');
+    expect(batches).toEqual([[{ from: 'client-detached', content: 'turn later' }]]);
     expect(steers).toEqual(['steer later']);
   });
 

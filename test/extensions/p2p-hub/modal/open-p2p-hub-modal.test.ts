@@ -3,15 +3,11 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { KeybindingsManager, Theme } from '@earendil-works/pi-coding-agent';
-import {
-  buildHubModalFactory,
-  openP2pHubModal,
-  type P2pHubModalResult,
-} from '../../../../src/extensions/p2p-hub/modal/open-p2p-hub-modal';
+import { buildHubModalFactory, openP2pHubModal, type P2pHubModalResult } from '../../../../src/extensions/p2p-hub/modal/open-p2p-hub-modal';
 import { P2pHubState, type P2pHubStateDeps } from '../../../../src/extensions/p2p-hub/p2p-hub-state';
 import { HubRegistry, type HubRegistryEntry } from '../../../../src/extensions/p2p-hub/registry.util';
-import { PathUtil } from '../../../../src/utils/path.util';
 import type { ModalDialog } from '../../../../src/libs/modal';
+import { PathUtil } from '../../../../src/utils/path.util';
 
 const theme = {
   fg: (_color: string, text: string) => text,
@@ -131,13 +127,7 @@ describe('buildHubModalFactory', () => {
     const entry = registry.read('duplicate');
     if (!entry) throw new Error('missing entry');
     const duplicateFactory = buildHubModalFactory(state, [entry]);
-    const duplicateDialog = duplicateFactory(
-      makeTui() as never,
-      theme,
-      keybindings,
-      () => undefined,
-      'inline',
-    ) as ModalDialog<P2pHubModalResult>;
+    const duplicateDialog = duplicateFactory(makeTui() as never, theme, keybindings, () => undefined, 'inline') as ModalDialog<P2pHubModalResult>;
     duplicateDialog.handleInput('j');
     duplicateDialog.handleInput('\r');
     for (const char of 'duplicate') duplicateDialog.handleInput(char);

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { FormatUtil } from '../../../src/extensions/p2p-hub/format.util';
 import { dye } from '@0xkahi/cli-dye';
+import { FormatUtil } from '../../../src/extensions/p2p-hub/format.util';
 
 describe('FormatUtil', () => {
   test('formatDuration renders seconds, minutes, and hours', () => {

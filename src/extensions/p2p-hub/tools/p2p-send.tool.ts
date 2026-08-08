@@ -1,8 +1,16 @@
+import { dye } from '@0xkahi/cli-dye';
 import type { AgentToolResult } from '@earendil-works/pi-agent-core';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
+import { Text } from '@earendil-works/pi-tui';
 import { Type } from 'typebox';
-import type { P2pHubState } from '../p2p-hub-state';
-import { memberNames, notConnectedResult, textResult } from './tool-helpers';
+import { formatPreview } from '../communication-presentation';
+import { memberNames, notConnectedResult, type P2pStateSource, resolveState, textResult } from './tool-helpers';
+
+export interface P2pSendDetails {
+  to: string;
+  triggerTurn: boolean;
+  error?: string;
+}
 
 export const P2pSendToolName = 'p2p_send';
 
@@ -16,7 +24,7 @@ export const p2pSendSchema = Type.Object({
   ),
 });
 
-export function createP2pSendTool(state: P2pHubState): ToolDefinition<typeof p2pSendSchema, Record<string, unknown>> {
+export function createP2pSendTool(source: P2pStateSource): ToolDefinition<typeof p2pSendSchema, P2pSendDetails | Record<string, unknown>> {
   return {
     name: P2pSendToolName,
     label: 'p2p send',
@@ -25,7 +33,8 @@ export function createP2pSendTool(state: P2pHubState): ToolDefinition<typeof p2p
     promptGuidelines: ['Only usable while connected to a p2p hub. Check p2p_ls for valid target names first if unsure.'],
     parameters: p2pSendSchema,
     async execute(_toolCallId, params): Promise<AgentToolResult<Record<string, unknown>>> {
-      if (!state.isConnected()) return notConnectedResult();
+      const state = resolveState(source);
+      if (!state?.isConnected()) return notConnectedResult();
 
       const triggerTurn = params.triggerTurn ?? false;
       const result = state.sendChat(params.to, params.message, triggerTurn);
@@ -44,10 +53,29 @@ export function createP2pSendTool(state: P2pHubState): ToolDefinition<typeof p2p
         return textResult(`Failed to send to "${params.to}"`, { to: params.to, triggerTurn, error: result.error });
       }
 
-      return textResult(`Sent to "${params.to}"${triggerTurn ? ' (will trigger a turn once idle)' : ''}`, {
-        to: params.to,
-        triggerTurn,
-      });
+      const confirmation = triggerTurn
+        ? `Accepted message for transport to "${params.to}"; a turn was requested once the recipient is idle.`
+        : `Accepted message for transport to "${params.to}" as a steer; no turn was requested.`;
+      return textResult(confirmation, { to: params.to, triggerTurn });
+    },
+    renderCall(args, theme, context) {
+      const triggerTurn = args.triggerTurn ?? false;
+      const mode = triggerTurn ? 'trigger when idle' : 'steer';
+      const body = context.expanded ? dye.strip(args.message) : formatPreview(args.message);
+      let text = theme.fg('toolTitle', theme.bold('p2p_send '));
+      text += theme.fg('accent', args.to);
+      text += theme.fg('muted', ` · ${mode}`);
+      text += `\n${theme.fg('dim', body)}`;
+      return new Text(text, 0, 0);
+    },
+    renderResult(result, { isPartial }, theme) {
+      if (isPartial) return new Text(theme.fg('warning', 'Sending…'), 0, 0);
+      const details = result.details as P2pSendDetails | undefined;
+      const content = result.content[0];
+      const message = content?.type === 'text' ? content.text : '';
+      if (details?.error) return new Text(theme.fg('error', `✗ ${message}`), 0, 0);
+      const delivery = details?.triggerTurn ? 'trigger when idle' : 'steer (no turn)';
+      return new Text(theme.fg('success', '✓ Accepted for transport') + theme.fg('muted', ` · ${details?.to ?? ''} · ${delivery}`), 0, 0);
     },
   };
 }

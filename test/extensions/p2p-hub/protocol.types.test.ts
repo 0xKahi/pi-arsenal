@@ -23,9 +23,7 @@ describe('p2p welcome protocol', () => {
 
   test('rejects the former flat member shape and malformed explicit payloads', () => {
     expect(safeParseP2pMessage(JSON.stringify({ type: 'welcome', name: 'client-a', members: [], statuses: {} }))).toBeUndefined();
-    expect(
-      safeParseP2pMessage(JSON.stringify({ ...welcome, host: undefined })),
-    ).toBeUndefined();
+    expect(safeParseP2pMessage(JSON.stringify({ ...welcome, host: undefined }))).toBeUndefined();
     expect(safeParseP2pMessage(JSON.stringify({ ...welcome, statuses: { 'host-a': { kind: 'bogus', since: 1 } } }))).toBeUndefined();
   });
 });

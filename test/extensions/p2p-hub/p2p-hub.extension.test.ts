@@ -14,12 +14,24 @@ type Handler = (event: unknown, ctx: ExtensionContext) => void;
 function makePi() {
   const sessionStartHandlers: Handler[] = [];
   const sessionShutdownHandlers: Handler[] = [];
+  const handlersByEvent = new Map<string, Handler[]>();
   const registerToolCalls: unknown[] = [];
+  const registerMessageRendererCalls: { customType: string; renderer: unknown }[] = [];
   const registerCommandCalls: { name: string; options: { handler: (args: string, ctx: ExtensionContext) => Promise<void> } }[] = [];
+  const sendMessageCalls: { message: Record<string, unknown>; options?: Record<string, unknown> }[] = [];
   const eventBusHandlers = new Map<string, (() => void)[]>();
 
+  let activeTools: string[] = ['read', 'bash'];
+
   const pi = {
+    getActiveTools: () => [...activeTools],
+    setActiveTools: (names: string[]) => {
+      activeTools = [...names];
+    },
     on: (event: string, handler: Handler) => {
+      const handlers = handlersByEvent.get(event) ?? [];
+      handlers.push(handler);
+      handlersByEvent.set(event, handlers);
       if (event === 'session_start') sessionStartHandlers.push(handler);
       if (event === 'session_shutdown') sessionShutdownHandlers.push(handler);
     },
@@ -29,8 +41,15 @@ function makePi() {
     registerCommand: (name: string, options: { handler: (args: string, ctx: ExtensionContext) => Promise<void> }) => {
       registerCommandCalls.push({ name, options });
     },
-    sendMessage: () => {},
-    sendUserMessage: () => {},
+    registerMessageRenderer: (customType: string, renderer: unknown) => {
+      registerMessageRendererCalls.push({ customType, renderer });
+    },
+    sendMessage: (message: Record<string, unknown>, options?: Record<string, unknown>) => {
+      sendMessageCalls.push({ message, options });
+    },
+    sendUserMessage: () => {
+      throw new Error('remote prompts must use custom p2p messages');
+    },
     events: {
       on: (channel: string, handler: () => void) => {
         const list = eventBusHandlers.get(channel) ?? [];
@@ -42,7 +61,18 @@ function makePi() {
     },
   } as unknown as ExtensionAPI;
 
-  return { pi, sessionStartHandlers, sessionShutdownHandlers, registerToolCalls, registerCommandCalls, eventBusHandlers };
+  return {
+    pi,
+    getActiveTools: () => [...activeTools],
+    sessionStartHandlers,
+    sessionShutdownHandlers,
+    handlersByEvent,
+    registerToolCalls,
+    registerMessageRendererCalls,
+    registerCommandCalls,
+    sendMessageCalls,
+    eventBusHandlers,
+  };
 }
 
 function makeCtx(cwd: string, opts: { notifyCalls?: { message: string; type?: string }[]; setWidgetCalls?: unknown[] } = {}): ExtensionContext {
@@ -101,36 +131,167 @@ describe('registerP2pHub lazy activation', () => {
     rmSync(cwd, { recursive: true, force: true });
   });
 
-  it('registers nothing observable while disabled before activation', () => {
+  it('deactivates its tools while disabled, keeping renderers for restored history', () => {
     mockConfig(false);
-    const { pi, registerToolCalls, registerCommandCalls, eventBusHandlers, sessionStartHandlers } = makePi();
+    const { pi, registerToolCalls, registerMessageRendererCalls, registerCommandCalls, eventBusHandlers, sessionStartHandlers, getActiveTools } =
+      makePi();
 
     registerP2pHub(pi, { config });
     expect(sessionStartHandlers).toHaveLength(1); // bootstrap listener only
 
     sessionStartHandlers[0]?.({ type: 'session_start', reason: 'startup' }, makeCtx(cwd));
-    expect(registerToolCalls).toHaveLength(0);
+    // Definitions and renderers stay registered so restored history renders correctly...
+    expect(registerToolCalls).toHaveLength(3);
+    expect(registerMessageRendererCalls).toHaveLength(1);
+    // ...but the model never sees the tools, and nothing is activated.
+    expect(getActiveTools()).toEqual(['read', 'bash']);
     expect(registerCommandCalls).toHaveLength(0);
     expect(eventBusHandlers.size).toBe(0);
+    expect(resolveP2pHubService()).toBeUndefined();
   });
 
-  it('activates exactly once, on the first enabled session', () => {
-    const { pi, registerToolCalls, registerCommandCalls, sessionStartHandlers } = makePi();
+  it('reconciles tool availability on every session as enabled flips', () => {
+    mockConfig(false);
+    const { pi, sessionStartHandlers, getActiveTools } = makePi();
     registerP2pHub(pi, { config });
 
-    mockConfig(false);
     sessionStartHandlers[0]?.({ type: 'session_start', reason: 'startup' }, makeCtx(cwd));
-    expect(registerToolCalls).toHaveLength(0);
+    expect(getActiveTools()).not.toContain('p2p_send');
 
     mockConfig(true);
-    sessionStartHandlers[0]?.({ type: 'session_start', reason: 'startup' }, makeCtx(cwd));
+    sessionStartHandlers[0]?.({ type: 'session_start', reason: 'new' }, makeCtx(cwd));
+    expect(getActiveTools()).toContain('p2p_send');
+
+    mockConfig(false);
+    sessionStartHandlers[0]?.({ type: 'session_start', reason: 'new' }, makeCtx(cwd));
+    expect(getActiveTools()).not.toContain('p2p_send');
+    expect(getActiveTools()).toEqual(['read', 'bash']);
+  });
+
+  it('registers render surfaces without reading config, which loads only at session_start', () => {
+    // ConfigLoader defaults to disabled until initializeConfig runs during session_start,
+    // so gating registration on `enabled` at load time would register nothing at all.
+    let configReads = 0;
+    const countingConfig = {
+      getP2pHub: () => {
+        configReads++;
+        return { enabled: false, layout: 'inline' as const };
+      },
+    } as unknown as ConfigProvider;
+    const { pi, registerToolCalls, registerMessageRendererCalls } = makePi();
+
+    registerP2pHub(pi, { config: countingConfig });
+    expect(configReads).toBe(0);
+    expect(registerToolCalls).toHaveLength(3);
+    expect(registerMessageRendererCalls).toHaveLength(1);
+  });
+
+  it('registers render surfaces at load so resumed sessions keep custom rendering', () => {
+    mockConfig(true);
+    const { pi, registerToolCalls, registerMessageRendererCalls, registerCommandCalls, sessionStartHandlers, getActiveTools } = makePi();
+
+    // Pi captures renderers per component when it replays history, so tools and the
+    // message renderer must already exist once registerP2pHub returns.
+    registerP2pHub(pi, { config });
     expect(registerToolCalls).toHaveLength(3); // p2p_send, p2p_ask, p2p_ls
+    expect(registerMessageRendererCalls).toEqual([expect.objectContaining({ customType: 'p2p_hub' })]);
+
+    sessionStartHandlers[0]?.({ type: 'session_start', reason: 'resume' }, makeCtx(cwd));
     expect(registerCommandCalls).toHaveLength(1);
     expect(registerCommandCalls[0]?.name).toBe('p2p-hub');
+    expect(getActiveTools()).toEqual(['read', 'bash', 'p2p_send', 'p2p_ask', 'p2p_ls']);
 
-    // A later enabled session must not re-activate (no double registration).
+    // A later session must not re-activate state or re-register surfaces.
     sessionStartHandlers[0]?.({ type: 'session_start', reason: 'startup' }, makeCtx(cwd));
     expect(registerToolCalls).toHaveLength(3);
+    expect(registerCommandCalls).toHaveLength(1);
+  });
+
+  it('delivers attributed custom steers, triggering batches, and remote prompts with correct turn behavior', async () => {
+    mockConfig(true);
+    const runtime = makePi();
+    const activation = activateP2pHub(runtime.pi, makeCtx(cwd), { config });
+    const hubName = `presentation-${Math.random().toString(36).slice(2)}`;
+    await activation.state.createHub(hubName);
+    const registry = new HubRegistry();
+    const entry = registry.read(hubName);
+    if (!entry) throw new Error('missing presentation hub');
+    const client = new P2pHubState(makeStateDeps('remote-peer', registry));
+
+    try {
+      await client.joinHub(entry);
+      await Bun.sleep(20);
+
+      client.sendChat(activation.state.getSelfName(), 'steer content', false);
+      await Bun.sleep(20);
+      expect(runtime.sendMessageCalls.at(-1)).toEqual({
+        message: {
+          customType: 'p2p_hub',
+          content: '[Peer message from "remote-peer"]\n\nsteer content',
+          display: true,
+          details: {
+            kind: 'steer',
+            delivery: 'steer',
+            items: [{ from: 'remote-peer', content: 'steer content' }],
+          },
+        },
+        options: { triggerTurn: false, deliverAs: 'steer' },
+      });
+
+      client.sendChat(activation.state.getSelfName(), 'turn content', true);
+      await Bun.sleep(300);
+      expect(runtime.sendMessageCalls.at(-1)).toEqual({
+        message: {
+          customType: 'p2p_hub',
+          content: '[Peer batch: 1 message]\n\n[Peer message from "remote-peer"]\n\nturn content',
+          display: true,
+          details: {
+            kind: 'batch',
+            delivery: 'trigger_when_idle',
+            items: [{ from: 'remote-peer', content: 'turn content' }],
+          },
+        },
+        options: { triggerTurn: true },
+      });
+
+      const replyPromise = client.askPrompt(activation.state.getSelfName(), 'remote work');
+      await Bun.sleep(20);
+      expect(runtime.sendMessageCalls.at(-1)).toEqual({
+        message: {
+          customType: 'p2p_hub',
+          content:
+            '[Remote prompt from "remote-peer" — your final reply is returned automatically; do not use p2p_send to answer]\n\nremote work',
+          display: true,
+          details: {
+            kind: 'remote_prompt',
+            delivery: 'remote_prompt',
+            items: [{ from: 'remote-peer', content: 'remote work' }],
+          },
+        },
+        options: { triggerTurn: true },
+      });
+      expect(
+        runtime.sendMessageCalls.filter(call => call.message.details && (call.message.details as { kind?: string }).kind === 'remote_prompt'),
+      ).toHaveLength(1);
+      runtime.handlersByEvent.get('agent_end')?.[0]?.(
+        {
+          messages: [
+            { role: 'assistant', content: [{ type: 'text', text: 'draft' }] },
+            { role: 'assistant', content: [{ type: 'text', text: 'final response' }] },
+          ],
+        },
+        makeCtx(cwd),
+      );
+      expect(await replyPromise).toMatchObject({ response: 'final response', from: activation.state.getSelfName() });
+
+      activation.state.setAgentRunning(true);
+      const countBeforeBusyAsk = runtime.sendMessageCalls.length;
+      expect(await client.askPrompt(activation.state.getSelfName(), 'should not inject')).toMatchObject({ error: 'Terminal is busy' });
+      expect(runtime.sendMessageCalls).toHaveLength(countBeforeBusyAsk);
+    } finally {
+      client.dispose();
+      activation.state.dispose();
+    }
   });
 
   it('preserves one hosted service across reload and restores it through the replacement runtime', async () => {
@@ -209,7 +370,8 @@ describe('registerP2pHub lazy activation', () => {
 
     expect(activation.state.isConnected()).toBe(false);
     expect(resolveP2pHubService()).toBeUndefined();
-    expect(replacement.registerToolCalls).toHaveLength(0);
+    // Tools are registered at load regardless, but the disabled session never activates them.
+    expect(replacement.registerCommandCalls).toHaveLength(0);
     expect(widgetCalls.some(call => Array.isArray(call) && call[1] === undefined)).toBe(true);
   });
 

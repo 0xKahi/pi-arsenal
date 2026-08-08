@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DEFAULT_MAX_BYTES } from '@earendil-works/pi-coding-agent';
 import { P2pHubState, type P2pHubStateDeps } from '../../../../src/extensions/p2p-hub/p2p-hub-state';
 import { HubRegistry } from '../../../../src/extensions/p2p-hub/registry.util';
 import { createP2pAskTool } from '../../../../src/extensions/p2p-hub/tools/p2p-ask.tool';
@@ -64,12 +65,32 @@ describe('p2p-hub tools', () => {
     expect(result.details.error).toBe('not_connected');
   });
 
+  test('tools registered before activation resolve their state lazily at call time', async () => {
+    // Tools are registered at extension load, before any hub state exists.
+    let state: ReturnType<typeof spawn> | undefined;
+    const send = createP2pSendTool(() => state);
+    const ls = createP2pLsTool(() => state);
+
+    const beforeActivation = await send.execute('id', { to: 'nobody', message: 'hi' }, undefined, undefined, undefined as never);
+    expect(beforeActivation.details.error).toBe('not_connected');
+    expect((await ls.execute('id', {}, undefined, undefined, undefined as never)).details.error).toBe('not_connected');
+
+    const { host, client } = await connectedPair('lazy-hub');
+    state = host;
+    const afterActivation = await send.execute('id', { to: client.getSelfName(), message: 'hi' }, undefined, undefined, undefined as never);
+    expect(afterActivation.details.error).toBeUndefined();
+    expect(afterActivation.details.to).toBe(client.getSelfName());
+  });
+
   test('p2p_send delivers a steer message when triggerTurn is false', async () => {
     const received: { content: string; from: string }[] = [];
     const { client } = await connectedPair('send-hub', (content, from) => received.push({ content, from }));
     const tool = createP2pSendTool(client);
     const result = await tool.execute('id', { to: 'host-a', message: 'hello' }, undefined, undefined, undefined as never);
     expect(result.details.error).toBeUndefined();
+    expect(result.content[0]?.type === 'text' ? result.content[0].text : '').toBe(
+      'Accepted message for transport to "host-a" as a steer; no turn was requested.',
+    );
     await Bun.sleep(20);
     expect(received).toEqual([{ content: 'hello', from: 'client-a' }]);
   });
@@ -100,6 +121,39 @@ describe('p2p-hub tools', () => {
     expect(result.content[0]?.type === 'text' ? result.content[0].text : '').toBe('reply to ping from client-b');
   });
 
+  test('p2p_ask truncates oversized replies with an explicit notice', async () => {
+    const oversized = 'x'.repeat(DEFAULT_MAX_BYTES + 1000);
+    const host = spawn('host-large', {
+      runRemotePrompt: () => setTimeout(() => host.resolveRemotePrompt(oversized), 5),
+    });
+    await host.createHub('large-ask-hub');
+    const entry = registry.read('large-ask-hub');
+    if (!entry) throw new Error('missing entry');
+    const client = spawn('client-large');
+    await client.joinHub(entry);
+    await Bun.sleep(20);
+
+    const result = await createP2pAskTool(client).execute(
+      'id',
+      { to: 'host-large', prompt: 'large reply please' },
+      undefined,
+      undefined,
+      undefined as never,
+    );
+    const text = result.content[0]?.type === 'text' ? result.content[0].text : '';
+    expect(result.details.truncated).toBe(true);
+    expect(text).toContain('[Reply truncated:');
+    expect(Buffer.byteLength(text)).toBeLessThan(DEFAULT_MAX_BYTES + 500);
+  });
+
+  test('p2p_ask normalizes busy errors without throwing', async () => {
+    const { host, client } = await connectedPair('busy-ask-hub');
+    host.setAgentRunning(true);
+    const result = await createP2pAskTool(client).execute('id', { to: 'host-a', prompt: 'ping' }, undefined, undefined, undefined as never);
+    expect(result.details.error).toBe('busy');
+    expect(result.content[0]?.type === 'text' ? result.content[0].text : '').toContain('busy');
+  });
+
   test('p2p_ask returns not-connected error when disconnected', async () => {
     const state = spawn('lonely-ask');
     const tool = createP2pAskTool(state);
@@ -107,33 +161,37 @@ describe('p2p-hub tools', () => {
     expect(result.details.error).toBe('not_connected');
   });
 
-  test('p2p_ls reports actual connection types and separate self markers for clients and hosts', async () => {
+  test('p2p_ls returns only routing-relevant fields and marks the caller', async () => {
     const { host, client } = await connectedPair('ls-hub');
     const clientResult = await createP2pLsTool(client).execute('id', {}, undefined, undefined, undefined as never);
     const clientText = clientResult.content[0]?.type === 'text' ? clientResult.content[0].text : '';
-    expect(clientText).toContain('host-a [host]');
-    expect(clientText).toContain('client-a (you) [client]');
-    expect(clientText).toContain('gpt-5.6-sol');
-    expect(clientText).toContain('%');
+    expect(clientText).toContain('host-a');
+    expect(clientText).toContain('client-a (you)');
+    expect(clientText).not.toContain('[host]');
+    expect(clientText).not.toContain('[client]');
+    expect(clientText).not.toContain('gpt-5.6-sol');
+    expect(clientText).not.toContain('%');
     expect(clientResult.details.members).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: 'host-a', connectionType: 'host', isSelf: false, model: 'gpt-5.6-sol' }),
-        expect.objectContaining({ name: 'client-a', connectionType: 'client', isSelf: true, model: 'gpt-5.6-sol' }),
+        expect.objectContaining({ name: 'host-a', isSelf: false, cwd: '/tmp/host-a' }),
+        expect.objectContaining({ name: 'client-a', isSelf: true, cwd: '/tmp/client-a' }),
       ]),
     );
-    expect((clientResult.details.members as Record<string, unknown>[]).every(member => !('role' in member))).toBe(true);
 
     const hostResult = await createP2pLsTool(host).execute('id', {}, undefined, undefined, undefined as never);
-    const hostText = hostResult.content[0]?.type === 'text' ? hostResult.content[0].text : '';
-    expect(hostText).toContain('host-a (you) [host]');
-    expect(hostText).toContain('client-a [client]');
-    expect(hostResult.details.members).toEqual(
+    const hostMembers = hostResult.details.members as Record<string, unknown>[];
+    expect(hostMembers).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: 'host-a', connectionType: 'host', isSelf: true }),
-        expect.objectContaining({ name: 'client-a', connectionType: 'client', isSelf: false }),
+        expect.objectContaining({ name: 'host-a', isSelf: true }),
+        expect.objectContaining({ name: 'client-a', isSelf: false }),
       ]),
     );
-    expect((hostResult.details.members as Record<string, unknown>[]).every(member => !('role' in member))).toBe(true);
+    for (const member of [...(clientResult.details.members as Record<string, unknown>[]), ...hostMembers]) {
+      expect(member).not.toHaveProperty('role');
+      expect(member).not.toHaveProperty('connectionType');
+      expect(member).not.toHaveProperty('model');
+      expect(member).not.toHaveProperty('context');
+    }
   });
 
   test('p2p_ls returns not-connected error when disconnected', async () => {
