@@ -39,7 +39,7 @@
         }
       }
     },
-    "p2p_hub": {
+    "p2p_council": {
       "default": {
         "enabled": false,
         "layout": "inline"

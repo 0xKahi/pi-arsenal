@@ -19,7 +19,7 @@ export class DefaultConfigResolver implements ConfigResolver {
 }
 
 export interface ConfigProvider {
-  getP2pHub(): Config['p2p_hub'];
+  getP2pCouncil(): Config['p2p_council'];
   getTmuxPopup(): Config['tmux_popup'];
 }
 
@@ -36,8 +36,8 @@ export class ConfigLoader implements ConfigProvider {
     return result;
   }
 
-  public getP2pHub(): Config['p2p_hub'] {
-    return this.config.p2p_hub;
+  public getP2pCouncil(): Config['p2p_council'] {
+    return this.config.p2p_council;
   }
 
   public getTmuxPopup(): Config['tmux_popup'] {
@@ -103,9 +103,9 @@ export class ConfigLoader implements ConfigProvider {
         ...base.tmux_popup,
         ...override.tmux_popup,
       },
-      p2p_hub: {
-        ...base.p2p_hub,
-        ...override.p2p_hub,
+      p2p_council: {
+        ...base.p2p_council,
+        ...override.p2p_council,
       },
     };
   }

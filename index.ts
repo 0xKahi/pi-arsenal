@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { ConfigLoader } from './src/config/config-loader';
-import { registerP2pHub } from './src/extensions/p2p-hub/p2p-hub.extension';
+import { registerP2pCouncil } from './src/extensions/p2p-council/p2p-council.extension';
 import { registerTmuxPopup } from './src/extensions/tmux-popup/tmux-popup.extension';
 
 export default function piArsenalExtension(pi: ExtensionAPI): void {
@@ -15,5 +15,5 @@ export default function piArsenalExtension(pi: ExtensionAPI): void {
   });
 
   registerTmuxPopup(pi, { config });
-  registerP2pHub(pi, { config });
+  registerP2pCouncil(pi, { config });
 }

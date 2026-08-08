@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { P2pHubConfigPartialSchema, P2pHubConfigSchema } from './p2p-hub.config.schema';
+import { P2pCouncilConfigPartialSchema, P2pCouncilConfigSchema } from './p2p-council.config.schema';
 import { TmuxPopupConfigPartialSchema, TmuxPopupConfigSchema } from './tmux-popup.config.schema';
 
 export const ConfigSchema = z.object({
@@ -10,7 +10,7 @@ export const ConfigSchema = z.object({
     height: 50,
     fileCommand: 'nvim',
   }),
-  p2p_hub: P2pHubConfigSchema.default({
+  p2p_council: P2pCouncilConfigSchema.default({
     enabled: false,
     layout: 'inline',
   }),
@@ -25,7 +25,7 @@ export type Config = z.infer<typeof ConfigSchema>;
 export const ConfigPartialSchema = z.object({
   $schema: z.string().optional(),
   tmux_popup: TmuxPopupConfigPartialSchema.optional(),
-  p2p_hub: P2pHubConfigPartialSchema.optional(),
+  p2p_council: P2pCouncilConfigPartialSchema.optional(),
 });
 
 export type ConfigPartial = z.infer<typeof ConfigPartialSchema>;

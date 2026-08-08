@@ -41,30 +41,30 @@ describe('ConfigLoader', () => {
       height: 50,
       fileCommand: 'nvim',
     });
-    expect(result.config.p2p_hub).toEqual({ enabled: false, layout: 'inline' });
+    expect(result.config.p2p_council).toEqual({ enabled: false, layout: 'inline' });
   });
 
   it('initializes one shared provider for extensions', () => {
-    writeFileSync(globalPath, JSON.stringify({ tmux_popup: { enabled: true }, p2p_hub: { enabled: true, layout: 'overlay' } }));
+    writeFileSync(globalPath, JSON.stringify({ tmux_popup: { enabled: true }, p2p_council: { enabled: true, layout: 'overlay' } }));
     const loader = new ConfigLoader();
 
     const result = loader.initializeConfig(createCtx(false, tmpDir), createResolver(globalPath));
 
     expect(result.success).toBe(true);
     expect(loader.getTmuxPopup().enabled).toBe(true);
-    expect(loader.getP2pHub()).toEqual({ enabled: true, layout: 'overlay' });
+    expect(loader.getP2pCouncil()).toEqual({ enabled: true, layout: 'overlay' });
   });
 
   it('resets the shared provider to defaults when reinitialization fails', () => {
     const loader = new ConfigLoader();
-    writeFileSync(globalPath, JSON.stringify({ p2p_hub: { enabled: true } }));
+    writeFileSync(globalPath, JSON.stringify({ p2p_council: { enabled: true } }));
     loader.initializeConfig(createCtx(false, tmpDir), createResolver(globalPath));
     writeFileSync(globalPath, '{ invalid');
 
     const result = loader.initializeConfig(createCtx(false, tmpDir), createResolver(globalPath));
 
     expect(result.success).toBe(false);
-    expect(loader.getP2pHub().enabled).toBe(false);
+    expect(loader.getP2pCouncil().enabled).toBe(false);
   });
 
   it('applies global configuration overrides', () => {
@@ -81,18 +81,28 @@ describe('ConfigLoader', () => {
     });
   });
 
-  it('layers p2p-hub layout project configuration over global', () => {
-    writeFileSync(globalPath, JSON.stringify({ p2p_hub: { enabled: false, layout: 'inline' } }));
-    writeFileSync(projectPath, JSON.stringify({ p2p_hub: { enabled: true, layout: 'overlay' } }));
+  it('layers p2p-council layout project configuration over global', () => {
+    writeFileSync(globalPath, JSON.stringify({ p2p_council: { enabled: false, layout: 'inline' } }));
+    writeFileSync(projectPath, JSON.stringify({ p2p_council: { enabled: true, layout: 'overlay' } }));
 
     const result = ConfigLoader.load(createCtx(true, tmpDir), createResolver(globalPath, projectPath));
     expect(result.success).toBe(true);
     if (!result.success) return;
-    expect(result.config.p2p_hub).toEqual({ enabled: true, layout: 'overlay' });
+    expect(result.config.p2p_council).toEqual({ enabled: true, layout: 'overlay' });
   });
 
-  it('rejects an invalid p2p-hub layout', () => {
-    writeFileSync(globalPath, JSON.stringify({ p2p_hub: { layout: 'floating' } }));
+  it('does not treat the legacy p2p_hub key as an activation alias', () => {
+    writeFileSync(globalPath, JSON.stringify({ p2p_hub: { enabled: true, layout: 'overlay' } }));
+
+    const result = ConfigLoader.load(createCtx(false, tmpDir), createResolver(globalPath));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.config.p2p_council).toEqual({ enabled: false, layout: 'inline' });
+    expect(result.config).not.toHaveProperty('p2p_hub');
+  });
+
+  it('rejects an invalid p2p-council layout', () => {
+    writeFileSync(globalPath, JSON.stringify({ p2p_council: { layout: 'floating' } }));
 
     const result = ConfigLoader.load(createCtx(false, tmpDir), createResolver(globalPath));
     expect(result.success).toBe(false);

@@ -29,7 +29,7 @@ describe('registerTmuxPopup', () => {
 
   let enabled = false;
   const config: ConfigProvider = {
-    getP2pHub: () => ({ enabled: false, layout: 'inline' }),
+    getP2pCouncil: () => ({ enabled: false, layout: 'inline' }),
     getTmuxPopup: () => ({ enabled, width: 50, height: 50, fileCommand: 'nvim' }),
   };
 
