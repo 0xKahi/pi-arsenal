@@ -1,15 +1,33 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { ConfigProvider } from '../../config/config-loader';
+import { formatPeerBatch, formatPeerMessage, formatRemotePrompt, renderP2pHubMessage } from './communication-presentation';
 import { COMMAND_NAME, PI_VIM_KEY_EVENT_ID } from './constants';
 import { resolveP2pIdentity } from './identity.util';
 import { openP2pHubModal } from './modal/open-p2p-hub-modal';
 import { clearP2pHubService, installP2pHubService, resolveP2pHubService } from './p2p-hub-service';
 import { type P2pHubBindingToken, type P2pHubRuntimeBinding, P2pHubState } from './p2p-hub-state';
 import { HubRegistry } from './registry.util';
-import { createP2pAskTool } from './tools/p2p-ask.tool';
-import { createP2pLsTool } from './tools/p2p-ls.tool';
-import { createP2pSendTool } from './tools/p2p-send.tool';
+import { createP2pAskTool, P2pAskToolName } from './tools/p2p-ask.tool';
+import { createP2pLsTool, P2pLsToolName } from './tools/p2p-ls.tool';
+import { createP2pSendTool, P2pSendToolName } from './tools/p2p-send.tool';
 import { P2PWidgetController } from './widget/status-widget-controller';
+
+const P2P_TOOL_NAMES: readonly string[] = [P2pSendToolName, P2pAskToolName, P2pLsToolName];
+
+/**
+ * Tools are registered at load so restored history keeps its renderers, then activated or
+ * deactivated here once `enabled` is known. Deactivating keeps the definitions resolvable for
+ * rendering while removing them from the model's tool list.
+ */
+function setP2pToolsActive(pi: ExtensionAPI, active: boolean): void {
+  try {
+    const current = pi.getActiveTools();
+    const next = active ? [...new Set([...current, ...P2P_TOOL_NAMES])] : current.filter(name => !P2P_TOOL_NAMES.includes(name));
+    if (next.length !== current.length) pi.setActiveTools(next);
+  } catch {
+    // Tool activation is unavailable in this runtime (e.g. tests or non-interactive hosts).
+  }
+}
 
 function clearWidget(ctx: ExtensionContext): void {
   try {
@@ -52,22 +70,40 @@ export function activateP2pHub(
         return false;
       }
     },
-    deliverBatch: (batchText, count) => {
+    deliverBatch: items => {
       pi.sendMessage(
         {
           customType: 'p2p_hub',
-          content: `[p2p-hub: ${count} message(s) received]\n\n${batchText}`,
+          content: formatPeerBatch(items),
           display: true,
-          details: { batched: true, count },
+          details: { kind: 'batch', delivery: 'trigger_when_idle', items },
         },
         { triggerTurn: true },
       );
     },
     deliverSteer: (content, from) => {
-      pi.sendMessage({ customType: 'p2p_hub', content, display: true, details: { from } }, { triggerTurn: false, deliverAs: 'steer' });
+      const item = { from, content };
+      pi.sendMessage(
+        {
+          customType: 'p2p_hub',
+          content: formatPeerMessage(item),
+          display: true,
+          details: { kind: 'steer', delivery: 'steer', items: [item] },
+        },
+        { triggerTurn: false, deliverAs: 'steer' },
+      );
     },
     runRemotePrompt: (from, prompt) => {
-      pi.sendUserMessage(`[Remote prompt from "${from}"]\n\n${prompt}`);
+      const item = { from, content: prompt };
+      pi.sendMessage(
+        {
+          customType: 'p2p_hub',
+          content: formatRemotePrompt(item),
+          display: true,
+          details: { kind: 'remote_prompt', delivery: 'remote_prompt', items: [item] },
+        },
+        { triggerTurn: true },
+      );
     },
     notify: (message, level) => {
       try {
@@ -148,10 +184,6 @@ export function activateP2pHub(
     state.setActiveTool(null, bindingToken);
   });
 
-  pi.registerTool(createP2pSendTool(state));
-  pi.registerTool(createP2pAskTool(state));
-  pi.registerTool(createP2pLsTool(state));
-
   const openModal = async (ctx: ExtensionContext) => {
     if (ctx.mode !== 'tui') {
       ctx.ui.notify(`/${COMMAND_NAME} requires TUI mode.`, 'warning');
@@ -182,16 +214,39 @@ export function activateP2pHub(
   return { state, bindingToken };
 }
 
-/** Lazily registers surfaces once per runtime and reuses the process service. */
+/**
+ * Registers render surfaces eagerly and hub state lazily.
+ *
+ * Rendering must be registered during extension load: when Pi replays persisted history it
+ * captures the custom-message renderer and the tool definition once per component, at
+ * construction time. Registering them from a `session_start` handler leaves every restored
+ * `p2p_hub` message and p2p tool call stuck on Pi's fallback rendering for the life of the
+ * session.
+ *
+ * Registration is deliberately unconditional: config is only loaded during `session_start`
+ * (see `index.ts`) and project-local config must not be read before trust is resolved, so
+ * `enabled` is not knowable at load time and gating here would register nothing at all.
+ * Availability is handled separately via `setP2pToolsActive` once config is known, so a
+ * disabled hub hides its tools from the model without losing renderers for restored history.
+ * Hub state stays lazy because it needs a session context.
+ */
 export function registerP2pHub(pi: ExtensionAPI, deps: { config: ConfigProvider }): void {
-  let registered = false;
+  let activation: { state: P2pHubState; bindingToken: P2pHubBindingToken } | undefined;
+  const currentState = () => activation?.state;
+
+  pi.registerMessageRenderer('p2p_hub', renderP2pHubMessage);
+  pi.registerTool(createP2pSendTool(currentState));
+  pi.registerTool(createP2pAskTool(currentState));
+  pi.registerTool(createP2pLsTool(currentState));
+
   pi.on('session_start', (_event, ctx) => {
-    if (!deps.config.getP2pHub().enabled) {
+    const enabled = deps.config.getP2pHub().enabled;
+    setP2pToolsActive(pi, enabled);
+    if (!enabled) {
       disposePreservedService(ctx);
       return;
     }
-    if (registered) return;
-    activateP2pHub(pi, ctx, deps);
-    registered = true;
+    if (activation) return;
+    activation = activateP2pHub(pi, ctx, deps);
   });
 }
