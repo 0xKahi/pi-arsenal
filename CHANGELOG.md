@@ -1,5 +1,11 @@
 # @0xkahi/pi-arsenal
 
+## 0.2.0
+
+### Minor Changes
+
+- 0aba50c: rename p2p_hub -> p2p_council
+
 ## 0.1.1
 
 ### Patch Changes
