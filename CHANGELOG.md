@@ -1,5 +1,11 @@
 # @0xkahi/pi-arsenal
 
+## 0.2.1
+
+### Patch Changes
+
+- 174cf69: lazyload p2p_council tools only activate when connected to a council
+
 ## 0.2.0
 
 ### Minor Changes
