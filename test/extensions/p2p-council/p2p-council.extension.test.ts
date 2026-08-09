@@ -275,16 +275,19 @@ describe('registerP2pCouncil lazy activation', () => {
     dialog.handleInput('\r');
     await Bun.sleep(30);
     expect(runtime.getActiveTools()).toEqual(['read', 'bash', 'p2p_send', 'p2p_ask', 'p2p_ls']);
+    await commandPromise;
 
+    // A successful create closes the modal. Reopen it before navigating into the
+    // newly created council's detail layer and disconnecting.
+    const disconnectPromise = command.options.handler('', ctx);
+    await Bun.sleep(20);
+    if (!dialog) throw new Error('modal did not reopen');
     dialog.handleInput('\r');
     await Bun.sleep(20);
     dialog.handleInput('\r');
     await Bun.sleep(30);
     expect(runtime.getActiveTools()).toEqual(['read', 'bash']);
-
-    dialog.handleInput('q');
-    dialog.handleInput('q');
-    await commandPromise;
+    await disconnectPromise;
   });
 
   it('toggles tools without duplicate entries across repeated modal join/disconnect cycles', async () => {

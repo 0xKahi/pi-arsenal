@@ -73,7 +73,7 @@ export class CouncilDetailLayer implements ModalLayer {
     lines.push(`${this.theme.fg('mdHeading', `[${identity.name}]`)} ${this.theme.fg('dim', statusStr)}`);
     lines.push(`  model: ${this.theme.fg('syntaxString', model)}`);
     if (identity.description) lines.push(`  description: ${this.theme.fg('syntaxString', identity.description)}`);
-    if (identity.cwd) lines.push(`  cwd: ${this.theme.underline(this.theme.fg('mdLinkUrl', identity.cwd))}`);
+    if (identity.cwd) lines.push(`  cwd: ${this.theme.fg('mdLinkUrl', identity.cwd)}`);
     return lines;
   }
 

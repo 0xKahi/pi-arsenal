@@ -457,7 +457,7 @@ export class P2pCouncilState {
           this.lastPushedTool = null;
 
           await this.registry.write({ name, port, hostPid: process.pid, createdAt: new Date().toISOString() });
-          this.runtimeFor()?.notify(`Council "${name}" created on :${port} as host "${this.selfName}"`, 'info');
+          this.runtimeFor()?.notify(`Council Chambers "${name}" has been created (port=${port})`, 'info');
           this.emitChange();
           this.pushStatus(true);
           resolve({ success: true });
@@ -525,7 +525,7 @@ export class P2pCouncilState {
 
         const joined: MemberJoinedMsg = { type: 'member_joined', identity };
         this.councilBroadcast(joined, clientName);
-        this.runtimeFor()?.notify(`"${clientName}" joined council "${this.councilName}"`, 'info');
+        this.runtimeFor()?.notify(`"${clientName}" has joined the chambers · "${this.councilName}"`, 'info');
         this.emitChange();
         return;
       }
@@ -561,7 +561,7 @@ export class P2pCouncilState {
       this.failPendingFor(name);
       const left: MemberLeftMsg = { type: 'member_left', name };
       this.councilBroadcast(left);
-      this.runtimeFor()?.notify(`"${name}" left council "${this.councilName}"`, 'info');
+      this.runtimeFor()?.notify(`"${name}" has left the chambers · "${this.councilName}"`, 'info');
       this.emitChange();
     });
 
