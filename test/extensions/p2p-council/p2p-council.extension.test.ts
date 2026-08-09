@@ -11,7 +11,7 @@ import { CouncilRegistry } from '../../../src/extensions/p2p-council/registry.ut
 
 type Handler = (event: unknown, ctx: ExtensionContext) => void;
 
-function makePi() {
+function makePi(initialActiveTools: string[] = ['read', 'bash']) {
   const sessionStartHandlers: Handler[] = [];
   const sessionShutdownHandlers: Handler[] = [];
   const handlersByEvent = new Map<string, Handler[]>();
@@ -21,7 +21,7 @@ function makePi() {
   const sendMessageCalls: { message: Record<string, unknown>; options?: Record<string, unknown> }[] = [];
   const eventBusHandlers = new Map<string, (() => void)[]>();
 
-  let activeTools: string[] = ['read', 'bash'];
+  let activeTools: string[] = [...initialActiveTools];
 
   const pi = {
     getActiveTools: () => [...activeTools],
@@ -64,6 +64,9 @@ function makePi() {
   return {
     pi,
     getActiveTools: () => [...activeTools],
+    emitSessionStart: (ctx: ExtensionContext, reason = 'startup') => {
+      for (const handler of sessionStartHandlers) handler({ type: 'session_start', reason }, ctx);
+    },
     sessionStartHandlers,
     sessionShutdownHandlers,
     handlersByEvent,
@@ -75,7 +78,14 @@ function makePi() {
   };
 }
 
-function makeCtx(cwd: string, opts: { notifyCalls?: { message: string; type?: string }[]; setWidgetCalls?: unknown[] } = {}): ExtensionContext {
+function makeCtx(
+  cwd: string,
+  opts: {
+    notifyCalls?: { message: string; type?: string }[];
+    setWidgetCalls?: unknown[];
+    custom?: (...args: unknown[]) => Promise<unknown>;
+  } = {},
+): ExtensionContext {
   const notifyCalls = opts.notifyCalls ?? [];
   const setWidgetCalls = opts.setWidgetCalls ?? [];
   return {
@@ -89,6 +99,7 @@ function makeCtx(cwd: string, opts: { notifyCalls?: { message: string; type?: st
       notify: (message: string, type?: string) => notifyCalls.push({ message, type }),
       setWidget: (...args: unknown[]) => setWidgetCalls.push(args),
       input: async () => undefined,
+      custom: opts.custom,
     },
   } as unknown as ExtensionContext;
 }
@@ -150,22 +161,45 @@ describe('registerP2pCouncil lazy activation', () => {
     expect(resolveP2pCouncilService()).toBeUndefined();
   });
 
-  it('reconciles tool availability on every session as enabled flips', () => {
-    mockConfig(false);
-    const { pi, sessionStartHandlers, getActiveTools } = makePi();
-    registerP2pCouncil(pi, { config });
-
-    sessionStartHandlers[0]?.({ type: 'session_start', reason: 'startup' }, makeCtx(cwd));
-    expect(getActiveTools()).not.toContain('p2p_send');
-
+  it('removes Pi-preactivated p2p tools on an enabled session without a connection', () => {
     mockConfig(true);
-    sessionStartHandlers[0]?.({ type: 'session_start', reason: 'new' }, makeCtx(cwd));
-    expect(getActiveTools()).toContain('p2p_send');
+    const runtime = makePi(['read', 'bash', 'p2p_send', 'p2p_ask', 'p2p_ls']);
+    registerP2pCouncil(runtime.pi, { config });
+
+    runtime.emitSessionStart(makeCtx(cwd));
+
+    expect(runtime.getActiveTools()).toEqual(['read', 'bash']);
+    expect(resolveP2pCouncilService()?.isConnected()).toBe(false);
+  });
+
+  it('activates p2p tools when session_start recovers a connected process service', async () => {
+    mockConfig(true);
+    const oldRuntime = makePi();
+    const oldCtx = makeCtx(cwd);
+    const oldActivation = activateP2pCouncil(oldRuntime.pi, oldCtx, { config });
+    await oldActivation.state.createCouncil('reconcile-connected-council');
+    oldRuntime.sessionShutdownHandlers[0]?.({ type: 'session_shutdown', reason: 'reload' }, oldCtx);
+
+    const replacement = makePi(['read', 'bash', 'p2p_send']);
+    registerP2pCouncil(replacement.pi, { config });
+    replacement.emitSessionStart(makeCtx(cwd), 'reload');
+
+    expect(replacement.getActiveTools()).toEqual(['read', 'bash', 'p2p_send', 'p2p_ask', 'p2p_ls']);
+  });
+
+  it('deactivates Pi-preactivated tools while disabled even if a connected service exists', async () => {
+    mockConfig(true);
+    const oldRuntime = makePi();
+    const activation = activateP2pCouncil(oldRuntime.pi, makeCtx(cwd), { config });
+    await activation.state.createCouncil('disabled-connected-council');
 
     mockConfig(false);
-    sessionStartHandlers[0]?.({ type: 'session_start', reason: 'new' }, makeCtx(cwd));
-    expect(getActiveTools()).not.toContain('p2p_send');
-    expect(getActiveTools()).toEqual(['read', 'bash']);
+    const replacement = makePi(['read', 'bash', 'p2p_send', 'p2p_ask', 'p2p_ls']);
+    registerP2pCouncil(replacement.pi, { config });
+    replacement.emitSessionStart(makeCtx(cwd));
+
+    expect(replacement.getActiveTools()).toEqual(['read', 'bash']);
+    expect(resolveP2pCouncilService()).toBeUndefined();
   });
 
   it('registers render surfaces without reading config, which loads only at session_start', () => {
@@ -200,12 +234,123 @@ describe('registerP2pCouncil lazy activation', () => {
     expect(registerCommandCalls).toHaveLength(1);
     expect(registerCommandCalls[0]?.name).toBe('p2p-council');
     expect(registerCommandCalls.some(call => call.name === 'p2p-hub')).toBe(false);
-    expect(getActiveTools()).toEqual(['read', 'bash', 'p2p_send', 'p2p_ask', 'p2p_ls']);
+    expect(getActiveTools()).toEqual(['read', 'bash']);
 
     // A later session must not re-activate state or re-register surfaces.
     sessionStartHandlers[0]?.({ type: 'session_start', reason: 'startup' }, makeCtx(cwd));
     expect(registerToolCalls).toHaveLength(3);
     expect(registerCommandCalls).toHaveLength(1);
+  });
+
+  it('activates on modal create and deactivates on manual disconnect', async () => {
+    mockConfig(true);
+    const runtime = makePi();
+    let dialog: { handleInput(data: string): void } | undefined;
+    const tui = { terminal: { rows: 24 }, requestRender: () => undefined };
+    const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
+    const keybindings = {
+      matches: (data: string, action: string) =>
+        ({ enter: 'tui.select.confirm', esc: 'tui.select.cancel' })[data as 'enter' | 'esc'] === action,
+    };
+    const ctx = makeCtx(cwd, {
+      custom: factory =>
+        new Promise(resolve => {
+          dialog = (factory as (tui: unknown, theme: unknown, keybindings: unknown, done: (result: unknown) => void) => typeof dialog)(
+            tui,
+            theme,
+            keybindings,
+            resolve,
+          );
+        }),
+    });
+    activateP2pCouncil(runtime.pi, ctx, { config });
+    const command = runtime.registerCommandCalls.find(call => call.name === 'p2p-council');
+    if (!command) throw new Error('missing p2p-council command');
+
+    const commandPromise = command.options.handler('', ctx);
+    await Bun.sleep(20);
+    if (!dialog) throw new Error('modal did not open');
+    dialog.handleInput('\r');
+    for (const char of 'transition-council') dialog.handleInput(char);
+    dialog.handleInput('\r');
+    await Bun.sleep(30);
+    expect(runtime.getActiveTools()).toEqual(['read', 'bash', 'p2p_send', 'p2p_ask', 'p2p_ls']);
+
+    dialog.handleInput('\r');
+    await Bun.sleep(20);
+    dialog.handleInput('\r');
+    await Bun.sleep(30);
+    expect(runtime.getActiveTools()).toEqual(['read', 'bash']);
+
+    dialog.handleInput('q');
+    dialog.handleInput('q');
+    await commandPromise;
+  });
+
+  it('toggles tools without duplicate entries across repeated modal join/disconnect cycles', async () => {
+    mockConfig(true);
+    const registry = new CouncilRegistry();
+    const host = new P2pCouncilState(makeStateDeps('cycle-host', registry));
+    await host.createCouncil('cycle-council');
+
+    const runtime = makePi();
+    let dialog: { handleInput(data: string): void } | undefined;
+    const tui = { terminal: { rows: 24 }, requestRender: () => undefined };
+    const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
+    const keybindings = { matches: (data: string, action: string) => ({ enter: 'tui.select.confirm' })[data as 'enter'] === action };
+    const ctx = makeCtx(cwd, {
+      custom: factory =>
+        new Promise(resolve => {
+          dialog = (factory as (tui: unknown, theme: unknown, keybindings: unknown, done: (result: unknown) => void) => typeof dialog)(
+            tui,
+            theme,
+            keybindings,
+            resolve,
+          );
+        }),
+    });
+    activateP2pCouncil(runtime.pi, ctx, { config });
+    const command = runtime.registerCommandCalls.find(call => call.name === 'p2p-council');
+    if (!command) throw new Error('missing p2p-council command');
+
+    const commandPromise = command.options.handler('', ctx);
+    await Bun.sleep(20);
+    if (!dialog) throw new Error('modal did not open');
+    dialog.handleInput('\r');
+    await Bun.sleep(20);
+    for (let cycle = 0; cycle < 2; cycle++) {
+      dialog.handleInput('\r');
+      await Bun.sleep(30);
+      expect(runtime.getActiveTools()).toEqual(['read', 'bash', 'p2p_send', 'p2p_ask', 'p2p_ls']);
+      dialog.handleInput('\r');
+      await Bun.sleep(30);
+      expect(runtime.getActiveTools()).toEqual(['read', 'bash']);
+    }
+
+    dialog.handleInput('q');
+    dialog.handleInput('q');
+    await commandPromise;
+    host.dispose();
+  });
+
+  it('keeps tools active during automatic host-loss promotion churn', async () => {
+    mockConfig(true);
+    const registry = new CouncilRegistry();
+    const host = new P2pCouncilState(makeStateDeps('promotion-host', registry));
+    await host.createCouncil('promotion-council');
+    const entry = registry.read('promotion-council');
+    if (!entry) throw new Error('missing promotion council');
+
+    const runtime = makePi();
+    const activation = activateP2pCouncil(runtime.pi, makeCtx(cwd), { config });
+    await activation.state.joinCouncil(entry);
+    runtime.emitSessionStart(makeCtx(cwd));
+    expect(runtime.getActiveTools()).toContain('p2p_send');
+
+    host.dispose();
+    for (let i = 0; i < 20 && activation.state.getConnectionType() !== 'disconnected'; i++) await Bun.sleep(10);
+    expect(activation.state.getConnectionType()).toBe('disconnected');
+    expect(runtime.getActiveTools()).toEqual(['read', 'bash', 'p2p_send', 'p2p_ask', 'p2p_ls']);
   });
 
   it('delivers attributed custom steers, triggering batches, and remote prompts with correct turn behavior', async () => {

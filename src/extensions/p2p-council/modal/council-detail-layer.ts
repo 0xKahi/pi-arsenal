@@ -23,6 +23,7 @@ export class CouncilDetailLayer implements ModalLayer {
     private readonly entry: CouncilRegistryEntry,
     private readonly state: P2pCouncilState,
     private readonly onStateChange: () => void,
+    private readonly onConnectionChange?: (connected: boolean) => void,
   ) {
     this.unsubscribe = state.subscribe(() => tui.requestRender());
     void this.load();
@@ -96,8 +97,10 @@ export class CouncilDetailLayer implements ModalLayer {
   private async toggleConnection(): Promise<void> {
     if (this.isConnectedToThis()) {
       this.state.disconnect('manual');
+      this.onConnectionChange?.(false);
     } else {
-      await this.state.joinCouncil(this.entry);
+      const result = await this.state.joinCouncil(this.entry);
+      if (result.success) this.onConnectionChange?.(true);
     }
     this.onStateChange();
     await this.load();

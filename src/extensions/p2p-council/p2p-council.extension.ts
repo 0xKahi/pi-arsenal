@@ -135,10 +135,20 @@ export function activateP2pCouncil(
     );
   }
   const bindingToken = state.attachRuntime(runtime);
+  const updateP2pTools = (connected: boolean) => {
+    // No idle gate is needed: the agent loop snapshots its context per run and uses that
+    // same snapshot both to build the payload and dispatch calls, so a tool call can only
+    // be emitted from a payload that contained the tool.
+    setP2pToolsActive(pi, deps.config.getP2pCouncil().enabled && connected);
+  };
 
   pi.on('session_start', (_event, ctx) => {
     latestCtx = ctx;
     state.refreshRuntime(bindingToken);
+    // Pi force-activates every extension tool in `_buildRuntime` at startup and `/reload`
+    // through `_refreshToolRegistry({ includeAllExtensionTools: true })` before emitting
+    // `session_start`. This reconcile re-establishes the connection gate; it is not redundant.
+    updateP2pTools(state.isConnected());
   });
 
   pi.on('session_shutdown', (event, ctx) => {
@@ -189,7 +199,7 @@ export function activateP2pCouncil(
       ctx.ui.notify(`/${COMMAND_NAME} requires TUI mode.`, 'warning');
       return;
     }
-    await openP2pCouncilModal(ctx, state, registry, deps.config.getP2pCouncil().layout);
+    await openP2pCouncilModal(ctx, state, registry, deps.config.getP2pCouncil().layout, updateP2pTools);
   };
 
   pi.registerCommand(COMMAND_NAME, {
@@ -226,8 +236,8 @@ export function activateP2pCouncil(
  * Registration is deliberately unconditional: config is only loaded during `session_start`
  * (see `index.ts`) and project-local config must not be read before trust is resolved, so
  * `enabled` is not knowable at load time and gating here would register nothing at all.
- * Availability is handled separately via `setP2pToolsActive` once config is known, so a
- * disabled council hides its tools from the model without losing renderers for restored history.
+ * Availability is handled separately once config and connection state are known, so tools are
+ * active only for an enabled, connected council without losing renderers for restored history.
  * Council state stays lazy because it needs a session context.
  */
 export function registerP2pCouncil(pi: ExtensionAPI, deps: { config: ConfigProvider }): void {
@@ -241,8 +251,8 @@ export function registerP2pCouncil(pi: ExtensionAPI, deps: { config: ConfigProvi
 
   pi.on('session_start', (_event, ctx) => {
     const enabled = deps.config.getP2pCouncil().enabled;
-    setP2pToolsActive(pi, enabled);
     if (!enabled) {
+      setP2pToolsActive(pi, false);
       disposePreservedService(ctx);
       return;
     }

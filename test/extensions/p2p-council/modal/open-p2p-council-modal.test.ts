@@ -92,10 +92,11 @@ describe('buildCouncilModalFactory', () => {
     expect(rendered).toContain('team-b (connected)');
   });
 
-  test('creates a council in a pushed text layer and refreshes the root list', async () => {
+  test('creates a council in a pushed text layer, reports connection, and refreshes the root list', async () => {
     const state = spawn('agent-a');
     const results: P2pCouncilModalResult[] = [];
-    const factory = buildCouncilModalFactory(state, [], async () => registry.list());
+    const connectionChanges: boolean[] = [];
+    const factory = buildCouncilModalFactory(state, [], async () => registry.list(), connected => connectionChanges.push(connected));
     const dialog = factory(makeTui() as never, theme, keybindings, r => results.push(r), 'inline') as ModalDialog<P2pCouncilModalResult>;
     dialog.focused = true;
 
@@ -105,6 +106,7 @@ describe('buildCouncilModalFactory', () => {
     await Bun.sleep(30);
 
     expect(results).toEqual([]);
+    expect(connectionChanges).toEqual([true]);
     expect(state.getCouncilName()).toBe('jkgq-council');
     const rendered = dialog.render(60).join('\n');
     expect(rendered).toContain('Current Council: jkgq-council (connected)');
@@ -126,7 +128,8 @@ describe('buildCouncilModalFactory', () => {
     await host.createCouncil('duplicate');
     const entry = registry.read('duplicate');
     if (!entry) throw new Error('missing entry');
-    const duplicateFactory = buildCouncilModalFactory(state, [entry]);
+    const connectionChanges: boolean[] = [];
+    const duplicateFactory = buildCouncilModalFactory(state, [entry], undefined, connected => connectionChanges.push(connected));
     const duplicateDialog = duplicateFactory(makeTui() as never, theme, keybindings, () => undefined, 'inline') as ModalDialog<P2pCouncilModalResult>;
     duplicateDialog.handleInput('j');
     duplicateDialog.handleInput('\r');
@@ -134,6 +137,7 @@ describe('buildCouncilModalFactory', () => {
     duplicateDialog.handleInput('\r');
     await Bun.sleep(20);
     expect(duplicateDialog.render(60).join('\n')).toContain('already exists');
+    expect(connectionChanges).toEqual([]);
   });
 
   test('vim navigation moves selection with j/k and Esc closes with {action: "close"}', () => {

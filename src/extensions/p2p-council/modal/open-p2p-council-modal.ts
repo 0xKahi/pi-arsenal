@@ -19,6 +19,7 @@ export function buildCouncilModalFactory(
   state: P2pCouncilState,
   liveCouncils: readonly CouncilRegistryEntry[],
   refreshCouncils: () => Promise<readonly CouncilRegistryEntry[]> = async () => liveCouncils,
+  onConnectionChange?: (connected: boolean) => void,
 ): ModalComponentFactory<P2pCouncilModalResult> {
   return (tui, theme, keybindings, done, frame) => {
     let tabContext: ModalTabContext | undefined;
@@ -32,16 +33,22 @@ export function buildCouncilModalFactory(
       onConfirm: item => {
         if (item.kind === 'create') {
           tabContext?.pushLayer(
-            new CreateCouncilLayer(theme, tui, state, async () => {
-              const refreshed = await refreshCouncils();
-              items.splice(0, items.length, ...refreshed.map(entry => ({ kind: 'council' as const, entry })), { kind: 'create' });
-              listTab.applyFilter('');
-              tabContext?.popLayer();
-            }),
+            new CreateCouncilLayer(
+              theme,
+              tui,
+              state,
+              async () => {
+                const refreshed = await refreshCouncils();
+                items.splice(0, items.length, ...refreshed.map(entry => ({ kind: 'council' as const, entry })), { kind: 'create' });
+                listTab.applyFilter('');
+                tabContext?.popLayer();
+              },
+              onConnectionChange,
+            ),
           );
           return;
         }
-        tabContext?.pushLayer(new CouncilDetailLayer(theme, tui, item.entry, state, () => tui.requestRender()));
+        tabContext?.pushLayer(new CouncilDetailLayer(theme, tui, item.entry, state, () => tui.requestRender(), onConnectionChange));
       },
       hints: () => [['Enter', 'Open']],
     });
@@ -90,11 +97,12 @@ export async function openP2pCouncilModal(
   state: P2pCouncilState,
   registry: CouncilRegistry,
   layout: ModalLayout,
+  onConnectionChange?: (connected: boolean) => void,
 ): Promise<P2pCouncilModalResult> {
   const liveCouncils = await listLiveCouncils(registry);
   return presentModal(
     ctx.ui,
     layout,
-    buildCouncilModalFactory(state, liveCouncils, () => listLiveCouncils(registry)),
+    buildCouncilModalFactory(state, liveCouncils, () => listLiveCouncils(registry), onConnectionChange),
   );
 }
