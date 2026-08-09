@@ -18,11 +18,11 @@ export type P2pCouncilModalResult = { action: 'close' };
 export function buildCouncilModalFactory(
   state: P2pCouncilState,
   liveCouncils: readonly CouncilRegistryEntry[],
-  refreshCouncils: () => Promise<readonly CouncilRegistryEntry[]> = async () => liveCouncils,
   onConnectionChange?: (connected: boolean) => void,
 ): ModalComponentFactory<P2pCouncilModalResult> {
   return (tui, theme, keybindings, done, frame) => {
     let tabContext: ModalTabContext | undefined;
+    const closeModal = () => done({ action: 'close' });
     const items: CouncilListItem[] = [...liveCouncils.map(entry => ({ kind: 'council' as const, entry })), { kind: 'create' as const }];
 
     const listTab = new ListTab<CouncilListItem>(theme, {
@@ -32,23 +32,22 @@ export function buildCouncilModalFactory(
       emptyMessage: 'No councils registered yet - select "create new"',
       onConfirm: item => {
         if (item.kind === 'create') {
-          tabContext?.pushLayer(
-            new CreateCouncilLayer(
-              theme,
-              tui,
-              state,
-              async () => {
-                const refreshed = await refreshCouncils();
-                items.splice(0, items.length, ...refreshed.map(entry => ({ kind: 'council' as const, entry })), { kind: 'create' });
-                listTab.applyFilter('');
-                tabContext?.popLayer();
-              },
-              onConnectionChange,
-            ),
-          );
+          tabContext?.pushLayer(new CreateCouncilLayer(theme, tui, state, closeModal, onConnectionChange));
           return;
         }
-        tabContext?.pushLayer(new CouncilDetailLayer(theme, tui, item.entry, state, () => tui.requestRender(), onConnectionChange));
+        tabContext?.pushLayer(
+          new CouncilDetailLayer(
+            theme,
+            tui,
+            item.entry,
+            state,
+            () => tui.requestRender(),
+            connected => {
+              onConnectionChange?.(connected);
+              closeModal();
+            },
+          ),
+        );
       },
       hints: () => [['Enter', 'Open']],
     });
@@ -100,9 +99,5 @@ export async function openP2pCouncilModal(
   onConnectionChange?: (connected: boolean) => void,
 ): Promise<P2pCouncilModalResult> {
   const liveCouncils = await listLiveCouncils(registry);
-  return presentModal(
-    ctx.ui,
-    layout,
-    buildCouncilModalFactory(state, liveCouncils, () => listLiveCouncils(registry), onConnectionChange),
-  );
+  return presentModal(ctx.ui, layout, buildCouncilModalFactory(state, liveCouncils, onConnectionChange));
 }
