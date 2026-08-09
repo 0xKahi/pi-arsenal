@@ -23,6 +23,7 @@ export class CouncilDetailLayer implements ModalLayer {
     private readonly entry: CouncilRegistryEntry,
     private readonly state: P2pCouncilState,
     private readonly onStateChange: () => void,
+    private readonly onConnectionChange?: (connected: boolean) => void,
   ) {
     this.unsubscribe = state.subscribe(() => tui.requestRender());
     void this.load();
@@ -66,18 +67,19 @@ export class CouncilDetailLayer implements ModalLayer {
   }
 
   private renderMember(identity: P2pIdentity, status: P2pStatus | undefined): string[] {
-    const model = identity.model ? `  ${identity.model}` : '';
-    const statusStr = status ? `  ${FormatUtil.formatStatus(status)}` : '';
-    const context = identity.context ? `  ${FormatUtil.formatContextNumeric(identity.context)} ${FormatUtil.formatContextBar(identity.context)}` : '';
-    const lines = [`  agent: ${identity.name}${model}${statusStr}${context}`];
-    if (identity.description) lines.push(`  description: ${identity.description}`);
-    if (identity.cwd) lines.push(`  cwd: ${identity.cwd}`);
+    const model = identity.model ? `${identity.model}` : '';
+    const statusStr = status ? `${FormatUtil.formatStatus(status)}` : '';
+    const lines: string[] = [];
+    lines.push(`${this.theme.fg('mdHeading', `[${identity.name}]`)} ${this.theme.fg('dim', statusStr)}`);
+    lines.push(`  model: ${this.theme.fg('syntaxString', model)}`);
+    if (identity.description) lines.push(`  description: ${this.theme.fg('syntaxString', identity.description)}`);
+    if (identity.cwd) lines.push(`  cwd: ${this.theme.fg('mdLinkUrl', identity.cwd)}`);
     return lines;
   }
 
   public hints(): Hint[] {
     if (this.busy) return [['...', 'Working']];
-    return [['Enter', this.isConnectedToThis() ? 'Disconnect' : 'Connect']];
+    return [['Enter', this.isConnectedToThis() ? this.theme.fg('error', 'Disconnect') : this.theme.fg('accent', 'Connect')]];
   }
 
   public handleInput(_data: string): void {
@@ -96,8 +98,10 @@ export class CouncilDetailLayer implements ModalLayer {
   private async toggleConnection(): Promise<void> {
     if (this.isConnectedToThis()) {
       this.state.disconnect('manual');
+      this.onConnectionChange?.(false);
     } else {
-      await this.state.joinCouncil(this.entry);
+      const result = await this.state.joinCouncil(this.entry);
+      if (result.success) this.onConnectionChange?.(true);
     }
     this.onStateChange();
     await this.load();

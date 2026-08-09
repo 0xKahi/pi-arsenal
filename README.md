@@ -30,6 +30,64 @@ The generated schema at `assets/config.schema.json` documents all supported conf
 }
 ```
 
+## `p2p_council` — Peer-to-Peer Agent Communication
+
+Connect multiple Pi agent sessions into a local council for real-time collaboration over WebSocket.
+
+### Requirements
+
+- Pi must be running in TUI mode for the modal and status widget (tools work in any mode).
+
+### Configuration
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/0xKahi/pi-arsenal/main/assets/config.schema.json",
+  "p2p_council": {
+    "enabled": true,
+    "layout": "inline"
+  }
+}
+```
+
+- `enabled` (`boolean`, default `false`) — whether p2p_council tools and the `/p2p-council` command are active.
+- `layout` (`"inline"` | `"overlay"`, default `"inline"`) — modal presentation style.
+
+### Agent Identity
+
+Create `<cwd>/.arsenal/p2p-role.yml` to set your agent's name and description:
+
+```yaml
+name: backend-agent
+description: Handles API and database work
+```
+
+Falls back to `basename(cwd)` when absent.
+
+### Command
+
+| Command | Description |
+|---------|-------------|
+| `/p2p-council` | Open the council modal to browse, create, join, or disconnect from councils |
+
+The extension also listens for a `pi.vimKeys.event:pi-arsenal.p2p_council` event, which external vim-key integrations can emit for quick access.
+
+### Tools
+
+| Tool | Description |
+|------|-------------|
+| `p2p_ls` | List all connected council members with status, description, and cwd |
+| `p2p_send(to, message, triggerTurn?)` | Fire-and-forget message to another agent. `triggerTurn: true` queues delivery until idle; `false` (default) delivers as a steer |
+| `p2p_ask(to, prompt)` | Synchronous RPC — sends a prompt to a remote agent and waits for its assistant reply |
+
+Tools are only available when `enabled: true` **and** connected to a council. Connection is managed through the TUI modal.
+
+> ⚠️ **Security note:** The council WebSocket server binds to `127.0.0.1` with no authentication. Any local process can connect, peek, or send messages.
+
+> 📖 **[Full p2p_council documentation →](docs/p2p-council.md)** — architecture, protocol, message delivery, host promotion, session lifecycle, and more.
+
+---
+
 ## `tmux_popup` tool
 
 Open an existing file in a non-blocking tmux popup editor.

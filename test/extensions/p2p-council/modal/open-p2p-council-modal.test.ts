@@ -3,7 +3,11 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { KeybindingsManager, Theme } from '@earendil-works/pi-coding-agent';
-import { buildCouncilModalFactory, openP2pCouncilModal, type P2pCouncilModalResult } from '../../../../src/extensions/p2p-council/modal/open-p2p-council-modal';
+import {
+  buildCouncilModalFactory,
+  openP2pCouncilModal,
+  type P2pCouncilModalResult,
+} from '../../../../src/extensions/p2p-council/modal/open-p2p-council-modal';
 import { P2pCouncilState, type P2pCouncilStateDeps } from '../../../../src/extensions/p2p-council/p2p-council-state';
 import { CouncilRegistry, type CouncilRegistryEntry } from '../../../../src/extensions/p2p-council/registry.util';
 import type { ModalDialog } from '../../../../src/libs/modal';
@@ -92,10 +96,11 @@ describe('buildCouncilModalFactory', () => {
     expect(rendered).toContain('team-b (connected)');
   });
 
-  test('creates a council in a pushed text layer and refreshes the root list', async () => {
+  test('creates a council, reports connection, and closes the modal', async () => {
     const state = spawn('agent-a');
     const results: P2pCouncilModalResult[] = [];
-    const factory = buildCouncilModalFactory(state, [], async () => registry.list());
+    const connectionChanges: boolean[] = [];
+    const factory = buildCouncilModalFactory(state, [], connected => connectionChanges.push(connected));
     const dialog = factory(makeTui() as never, theme, keybindings, r => results.push(r), 'inline') as ModalDialog<P2pCouncilModalResult>;
     dialog.focused = true;
 
@@ -104,11 +109,9 @@ describe('buildCouncilModalFactory', () => {
     dialog.handleInput('\r');
     await Bun.sleep(30);
 
-    expect(results).toEqual([]);
+    expect(results).toEqual([{ action: 'close' }]);
+    expect(connectionChanges).toEqual([true]);
     expect(state.getCouncilName()).toBe('jkgq-council');
-    const rendered = dialog.render(60).join('\n');
-    expect(rendered).toContain('Current Council: jkgq-council (connected)');
-    expect(rendered).toContain('jkgq-council (connected)');
   });
 
   test('Esc cancels create and duplicate errors remain inline', async () => {
@@ -126,7 +129,8 @@ describe('buildCouncilModalFactory', () => {
     await host.createCouncil('duplicate');
     const entry = registry.read('duplicate');
     if (!entry) throw new Error('missing entry');
-    const duplicateFactory = buildCouncilModalFactory(state, [entry]);
+    const connectionChanges: boolean[] = [];
+    const duplicateFactory = buildCouncilModalFactory(state, [entry], connected => connectionChanges.push(connected));
     const duplicateDialog = duplicateFactory(makeTui() as never, theme, keybindings, () => undefined, 'inline') as ModalDialog<P2pCouncilModalResult>;
     duplicateDialog.handleInput('j');
     duplicateDialog.handleInput('\r');
@@ -134,6 +138,7 @@ describe('buildCouncilModalFactory', () => {
     duplicateDialog.handleInput('\r');
     await Bun.sleep(20);
     expect(duplicateDialog.render(60).join('\n')).toContain('already exists');
+    expect(connectionChanges).toEqual([]);
   });
 
   test('vim navigation moves selection with j/k and Esc closes with {action: "close"}', () => {

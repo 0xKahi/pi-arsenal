@@ -16,6 +16,7 @@ export class CreateCouncilLayer implements ModalLayer {
     private readonly tui: TUI,
     private readonly state: P2pCouncilState,
     private readonly onCreated: () => void | Promise<void>,
+    private readonly onConnectionChange?: (connected: boolean) => void,
   ) {}
 
   public get focused(): boolean {
@@ -81,6 +82,7 @@ export class CreateCouncilLayer implements ModalLayer {
     this.error = undefined;
     this.tui.requestRender();
     const result = await this.state.createCouncil(name);
+    if (result.success) this.onConnectionChange?.(true);
     if (!this.active) return;
     this.busy = false;
     if (!result.success) {

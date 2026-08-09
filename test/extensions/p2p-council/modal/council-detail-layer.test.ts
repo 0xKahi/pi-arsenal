@@ -140,7 +140,8 @@ describe('CouncilDetailLayer', () => {
 
     const client = spawn('client-a');
     const tui = makeTui();
-    const layer = new CouncilDetailLayer(theme, tui as never, entry, client, () => {});
+    const connectionChanges: boolean[] = [];
+    const layer = new CouncilDetailLayer(theme, tui as never, entry, client, () => {}, connected => connectionChanges.push(connected));
     await Bun.sleep(10);
     expect(client.isConnected()).toBe(false);
 
@@ -148,6 +149,7 @@ describe('CouncilDetailLayer', () => {
     await Bun.sleep(30);
 
     expect(client.isConnected()).toBe(true);
+    expect(connectionChanges).toEqual([true]);
     expect(client.getCouncilName()).toBe('connect-council');
     expect(layer.hints()).toEqual([['Enter', 'Disconnect']]);
     const rendered = layer.render(60, undefined).join('\n');
@@ -163,14 +165,37 @@ describe('CouncilDetailLayer', () => {
     if (!entry) throw new Error('missing entry');
 
     const tui = makeTui();
-    const layer = new CouncilDetailLayer(theme, tui as never, entry, host, () => {});
+    const connectionChanges: boolean[] = [];
+    const layer = new CouncilDetailLayer(theme, tui as never, entry, host, () => {}, connected => connectionChanges.push(connected));
     await Bun.sleep(10);
 
     layer.handleNavigation('confirm');
     await Bun.sleep(30);
 
     expect(host.isConnected()).toBe(false);
+    expect(connectionChanges).toEqual([false]);
   });
+
+  test('a failed join does not report a connection transition', async () => {
+    const viewer = spawn('failed-join-viewer');
+    const tui = makeTui();
+    const connectionChanges: boolean[] = [];
+    const layer = new CouncilDetailLayer(
+      theme,
+      tui as never,
+      { name: 'missing-council', port: 1, hostPid: process.pid, createdAt: new Date().toISOString() },
+      viewer,
+      () => {},
+      connected => connectionChanges.push(connected),
+    );
+    await Bun.sleep(4000);
+
+    layer.handleNavigation('confirm');
+    await Bun.sleep(4000);
+
+    expect(viewer.isConnected()).toBe(false);
+    expect(connectionChanges).toEqual([]);
+  }, 10000);
 
   test('an unreachable council renders an error instead of hanging', async () => {
     const viewer = spawn('viewer');
