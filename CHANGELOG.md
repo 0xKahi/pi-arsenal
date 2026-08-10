@@ -1,5 +1,11 @@
 # @0xkahi/pi-arsenal
 
+## 0.2.2
+
+### Patch Changes
+
+- 1d3bd46: added batching to p2p_ask tool
+
 ## 0.2.1
 
 ### Patch Changes
