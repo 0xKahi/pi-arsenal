@@ -175,7 +175,7 @@ describe('p2p communication presentation', () => {
       { args, invalidate: () => {} } as never,
     );
     const replyText = render(reply).join('\n');
-    expect(replyText).toContain('<success>✓ peer</success>');
+    expect(replyText).toContain('<success>✓</success> <text>peer</text>');
     expect(replyText).toContain('raw reply');
 
     const send = createP2pSendTool(dummyState);
