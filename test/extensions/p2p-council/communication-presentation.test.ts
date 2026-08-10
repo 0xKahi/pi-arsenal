@@ -144,21 +144,39 @@ describe('p2p communication presentation', () => {
     expect(expandedSend.replace(/\s/g, '')).toContain('z'.repeat(100));
 
     const ask = createP2pAskTool(dummyState);
-    const collapsedAsk = render(ask.renderCall!({ to: 'peer', prompt: long }, plainTheme(), renderContext(false))).join('\n');
-    const expandedAsk = render(ask.renderCall!({ to: 'peer', prompt: long }, plainTheme(), renderContext(true))).join('\n');
-    expect(collapsedAsk).toContain('…');
+    const args = { requests: [{ to: 'peer', prompt: long }] };
+    expect(render(ask.renderCall!(args, plainTheme(), renderContext(false)))).toEqual([]);
+    const result = {
+      content: [{ type: 'text' as const, text: 'Reply from "peer":\nraw reply' }],
+      details: { kind: 'batch' as const, entries: [{ to: 'peer', state: 'success' as const, from: 'peer', reply: 'raw reply' }] },
+    };
+    const collapsedAsk = render(
+      ask.renderResult!(result, { expanded: false, isPartial: false }, plainTheme(), { args, invalidate: () => {} } as never),
+    ).join('\n');
+    const expandedAsk = render(
+      ask.renderResult!(result, { expanded: true, isPartial: false }, plainTheme(), { args, invalidate: () => {} } as never),
+    ).join('\n');
+    expect(collapsedAsk).not.toContain('raw reply');
+    expect(collapsedAsk).not.toContain('line one');
+    expect(expandedAsk).toContain('raw reply');
     expect(expandedAsk.replace(/\s/g, '')).toContain('z'.repeat(100));
   });
 
   test('result renderers expose responder identity and style operational errors distinctly', () => {
     const ask = createP2pAskTool(dummyState);
+    const args = { requests: [{ to: 'peer', prompt: 'question' }] };
     const reply = ask.renderResult!(
-      { content: [{ type: 'text', text: 'raw reply' }], details: { to: 'peer', from: 'peer' } },
-      { expanded: false, isPartial: false } as never,
+      {
+        content: [{ type: 'text', text: 'Reply from "peer":\nraw reply' }],
+        details: { kind: 'batch', entries: [{ to: 'peer', state: 'success', from: 'peer', reply: 'raw reply' }] },
+      },
+      { expanded: true, isPartial: false } as never,
       theme,
-      {} as never,
+      { args, invalidate: () => {} } as never,
     );
-    expect(render(reply).join('\n')).toContain('Reply from peer');
+    const replyText = render(reply).join('\n');
+    expect(replyText).toContain('<success>✓ peer</success>');
+    expect(replyText).toContain('raw reply');
 
     const send = createP2pSendTool(dummyState);
     const success = send.renderResult!(

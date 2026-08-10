@@ -67,7 +67,7 @@ export function createP2pSendTool(source: P2pStateSource): ToolDefinition<typeof
       const mode = triggerTurn ? 'trigger when idle' : 'steer';
       const body = context.expanded ? dye.strip(args.message) : formatPreview(args.message);
       let text = theme.fg('toolTitle', theme.bold('p2p_send '));
-      text += theme.fg('accent', args.to);
+      text += theme.fg('text', args.to);
       text += theme.fg('muted', ` · ${mode}`);
       text += `\n${theme.fg('dim', body)}`;
       return new Text(text, 0, 0);
