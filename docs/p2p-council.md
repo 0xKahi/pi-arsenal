@@ -48,14 +48,27 @@ Queued in an inbox and delivered as a **batch** when the recipient's agent loop 
 
 ### Remote prompts (`p2p_ask`)
 
-Synchronous RPC: the caller blocks until the remote agent completes a full turn and returns its assistant response. Timeouts:
+`p2p_ask` is a concurrent synchronous batch RPC. Pass a non-empty ordered `requests` array and give each council member its own role-specific prompt:
+
+```json
+{
+  "requests": [
+    { "to": "backend-agent", "prompt": "Review the API design and identify failure modes." },
+    { "to": "test-agent", "prompt": "Propose cancellation and timeout tests." }
+  ]
+}
+```
+
+Target names must be unique within the batch (case-sensitive). A duplicate rejects the entire call before any prompt is sent. Distinct requests start concurrently, but progress and final replies always remain in request order. Each target settles independently: a busy, missing, timed-out, disconnected, or aborted request does not discard successful sibling replies.
+
+Timeouts apply independently to each request:
 
 | Timeout | Duration | Trigger |
 |---------|----------|---------|
-| Inactivity | 90 seconds | No status updates from the target |
+| Inactivity | 90 seconds | No status updates from that target |
 | Hard ceiling | 30 minutes | Absolute maximum regardless of activity |
 
-The target agent sends periodic keepalive status updates (every 30s) while processing a remote prompt to prevent inactivity timeouts.
+A target sends periodic keepalive status updates (every 30s) while processing a remote prompt to prevent inactivity timeouts. Cancelling the tool propagates cancellation to all outstanding requests while retaining outcomes that already settled.
 
 ## TUI Widget
 
@@ -114,7 +127,35 @@ If a `p2p_ask` target is mid-turn or already processing a remote prompt, it decl
 
 ### Reply truncation
 
-`p2p_ask` replies are truncated to 2,000 lines or 50KB (whichever is hit first).
+The combined model-facing output from a `p2p_ask` batch is capped at 2,000 lines or 50KB (whichever is hit first). The available reply budget is allocated fairly across successful targets so one oversized reply cannot hide all later outcomes. Every affected reply includes an explicit truncation notice, and the expanded TUI retains the same bounded reply text rather than a hidden full copy.
+
+### Batch result display
+
+Collapsed results show target status and aggregate counts only; prompts and reply bodies are omitted:
+
+```text
+p2p_ask
+├─ ✓ backend-agent
+└─ ✗ test-agent
+↩ 1 reply · 1 failure
+```
+
+Expand the tool row to see each complete soft-wrapped outbound prompt and every settled attributed reply or normalized error:
+
+```text
+p2p_ask
+├─ ✓ backend-agent
+│    Review the API design and identify failure modes.
+└─ ✗ test-agent
+     Propose cancellation and timeout tests.
+↩ 1 reply · 1 failure
+✓ backend-agent
+  The API should distinguish transport and remote failures...
+✗ test-agent
+  Agent "test-agent" is busy and declined the prompt
+```
+
+Pending targets use an animated Braille status symbol and transition independently to `✓` or `✗`.
 
 ### Self-targeting
 

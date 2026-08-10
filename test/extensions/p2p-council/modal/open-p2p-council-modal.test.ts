@@ -156,7 +156,7 @@ describe('buildCouncilModalFactory', () => {
     // Cursor should now be on "create new" (3rd row); confirm pushes its layer.
     dialog.handleInput('\r');
     expect(results).toEqual([]);
-    expect(dialog.render(60).join('\n')).toContain('Create New Council');
+    expect(dialog.render(60).join('\n')).toContain('Register Council Name');
 
     const dialog2 = factory(makeTui() as never, theme, keybindings, r => results.push(r), 'inline') as ModalDialog<P2pCouncilModalResult>;
     dialog2.handleInput('q');

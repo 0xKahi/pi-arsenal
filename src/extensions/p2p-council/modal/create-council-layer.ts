@@ -46,7 +46,7 @@ export class CreateCouncilLayer implements ModalLayer {
   }
 
   public render(width: number, height: number | undefined): string[] {
-    const lines = [this.theme.fg('accent', 'Create New Council'), '', ...this.input.render(width)];
+    const lines = [this.theme.fg('mdHeading', 'Register Council Name'), '', ...this.input.render(width)];
     if (this.busy) lines.push('', this.theme.fg('muted', 'Creating council...'));
     else if (this.error) lines.push('', this.theme.fg('error', this.error));
     const rendered = lines.map(line => fitLine(line, width));

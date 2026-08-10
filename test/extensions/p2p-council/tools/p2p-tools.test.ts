@@ -117,8 +117,8 @@ describe('p2p-council tools', () => {
     await Bun.sleep(20);
 
     const tool = createP2pAskTool(client);
-    const result = await tool.execute('id', { to: 'host-a', prompt: 'ping' }, undefined, undefined, undefined as never);
-    expect(result.content[0]?.type === 'text' ? result.content[0].text : '').toBe('reply to ping from client-b');
+    const result = await tool.execute('id', { requests: [{ to: 'host-a', prompt: 'ping' }] }, undefined, undefined, undefined as never);
+    expect(result.content[0]?.type === 'text' ? result.content[0].text : '').toBe('Reply from "host-a":\nreply to ping from client-b');
   });
 
   test('p2p_ask truncates oversized replies with an explicit notice', async () => {
@@ -135,30 +135,41 @@ describe('p2p-council tools', () => {
 
     const result = await createP2pAskTool(client).execute(
       'id',
-      { to: 'host-large', prompt: 'large reply please' },
+      { requests: [{ to: 'host-large', prompt: 'large reply please' }] },
       undefined,
       undefined,
       undefined as never,
     );
     const text = result.content[0]?.type === 'text' ? result.content[0].text : '';
-    expect(result.details.truncated).toBe(true);
-    expect(text).toContain('[Reply truncated:');
-    expect(Buffer.byteLength(text)).toBeLessThan(DEFAULT_MAX_BYTES + 500);
+    const details = result.details as { entries: Array<{ truncated?: boolean; reply?: string }> };
+    expect(details.entries[0]?.truncated).toBe(true);
+    expect(text).toContain('truncated to fit aggregate');
+    expect(details.entries[0]?.reply).toContain('truncated to fit aggregate');
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(DEFAULT_MAX_BYTES);
   });
 
   test('p2p_ask normalizes busy errors without throwing', async () => {
     const { host, client } = await connectedPair('busy-ask-council');
     host.setAgentRunning(true);
-    const result = await createP2pAskTool(client).execute('id', { to: 'host-a', prompt: 'ping' }, undefined, undefined, undefined as never);
-    expect(result.details.error).toBe('busy');
+    const result = await createP2pAskTool(client).execute(
+      'id',
+      { requests: [{ to: 'host-a', prompt: 'ping' }] },
+      undefined,
+      undefined,
+      undefined as never,
+    );
+    const details = result.details as { entries: Array<{ error?: string }> };
+    expect(details.entries[0]?.error).toBe('busy');
     expect(result.content[0]?.type === 'text' ? result.content[0].text : '').toContain('busy');
   });
 
   test('p2p_ask returns not-connected error when disconnected', async () => {
     const state = spawn('lonely-ask');
     const tool = createP2pAskTool(state);
-    const result = await tool.execute('id', { to: 'nobody', prompt: 'hi' }, undefined, undefined, undefined as never);
-    expect(result.details.error).toBe('not_connected');
+    // Legacy direct callers are normalized just like restored calls prepared by Pi.
+    const result = await tool.execute('id', { to: 'nobody', prompt: 'hi' } as never, undefined, undefined, undefined as never);
+    const details = result.details as { entries: Array<{ error?: string }> };
+    expect(details.entries[0]?.error).toBe('not_connected');
   });
 
   test('p2p_ls returns only routing-relevant fields and marks the caller', async () => {
