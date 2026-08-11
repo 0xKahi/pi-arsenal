@@ -6,7 +6,7 @@ import { DEFAULT_MAX_BYTES } from '@earendil-works/pi-coding-agent';
 import { P2pCouncilState, type P2pCouncilStateDeps } from '../../../../src/extensions/p2p-council/p2p-council-state';
 import { CouncilRegistry } from '../../../../src/extensions/p2p-council/registry.util';
 import { createP2pAskTool } from '../../../../src/extensions/p2p-council/tools/p2p-ask.tool';
-import { createP2pLsTool } from '../../../../src/extensions/p2p-council/tools/p2p-ls.tool';
+import { createP2pLsTool, P2pLsResultComponent } from '../../../../src/extensions/p2p-council/tools/p2p-ls.tool';
 import { createP2pSendTool } from '../../../../src/extensions/p2p-council/tools/p2p-send.tool';
 import { PathUtil } from '../../../../src/utils/path.util';
 
@@ -203,6 +203,36 @@ describe('p2p-council tools', () => {
       expect(member).not.toHaveProperty('model');
       expect(member).not.toHaveProperty('context');
     }
+  });
+
+  test('p2p_ls renders a compact member tree and reveals raw output when expanded', () => {
+    const component = new P2pLsResultComponent(
+      {
+        fg: (color, value) => `[${color}:${value}]`,
+        bold: value => `*${value}*`,
+      },
+      [
+        { name: 'agent', status: 'idle', isSelf: true },
+        { name: 'peer', status: 'thinking', isSelf: false },
+      ],
+      'Connected to council "example" (2 agents):\n  • agent (you)  idle',
+      false,
+    );
+    const collapsed = component.render(120).join('\n');
+    expect(collapsed).toContain('[dim:├─ ][text:agent] [warning:(idle)] [accent:(you)]');
+    expect(collapsed).toContain('[dim:└─ ][text:peer] [warning:(thinking)]');
+    expect(collapsed).not.toContain('Connected to council');
+
+    const expanded = new P2pLsResultComponent(
+      {
+        fg: (_color, value) => value,
+        bold: value => value,
+      },
+      [{ name: 'agent', status: 'idle', isSelf: true }],
+      'actual output',
+      true,
+    ).render(120);
+    expect(expanded).toEqual(['p2p_ls', '└─ agent (idle) (you)', '', 'actual output']);
   });
 
   test('p2p_ls returns not-connected error when disconnected', async () => {

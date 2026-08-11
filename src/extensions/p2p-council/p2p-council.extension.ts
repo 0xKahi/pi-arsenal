@@ -107,7 +107,7 @@ export function activateP2pCouncil(
     },
     notify: (message, level) => {
       try {
-        latestCtx.ui.notify(`(p2p-council): ${message}`, level);
+        latestCtx.ui.notify(`(p2p-council) ${message}`, level);
       } catch {
         // UI unavailable (e.g. non-interactive mode) - drop silently.
       }
