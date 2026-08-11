@@ -1,5 +1,11 @@
 # @0xkahi/pi-arsenal
 
+## 0.2.3
+
+### Patch Changes
+
+- b042885: added renderer to p2p_ls tool
+
 ## 0.2.2
 
 ### Patch Changes
