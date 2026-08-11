@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Theme } from '@earendil-works/pi-coding-agent';
+import { visibleWidth } from '@earendil-works/pi-tui';
 import { CouncilDetailLayer } from '../../../../src/extensions/p2p-council/modal/council-detail-layer';
 import { P2pCouncilState, type P2pCouncilStateDeps } from '../../../../src/extensions/p2p-council/p2p-council-state';
 import { CouncilRegistry } from '../../../../src/extensions/p2p-council/registry.util';
@@ -101,6 +102,29 @@ describe('CouncilDetailLayer', () => {
     expect(layer.render(60, undefined).join('\n')).toContain('host-a');
   });
 
+  test('wraps long member details instead of truncating them', async () => {
+    const description = 'Coordinates detailed implementation work across multiple council members';
+    const host = new P2pCouncilState(
+      makeDeps({
+        name: 'host-a',
+        registry,
+        identity: { name: 'host-a', description, cwd: '/tmp/host-a' },
+      }),
+    );
+    created.push(host);
+    await host.createCouncil('wrapped-council');
+    const entry = registry.read('wrapped-council');
+    if (!entry) throw new Error('missing entry');
+
+    const layer = new CouncilDetailLayer(theme, makeTui() as never, entry, host, () => {});
+    await Bun.sleep(10);
+
+    const rendered = layer.render(28, undefined);
+    expect(rendered.every(line => visibleWidth(line) <= 28)).toBe(true);
+    expect(rendered.join(' ')).toContain(description);
+    expect(rendered.join('\n')).not.toContain('…');
+  });
+
   test('connected detail updates live for joins, status changes, and leaves without reopening', async () => {
     const host = spawn('host-a');
     await host.createCouncil('live-council');
@@ -141,7 +165,14 @@ describe('CouncilDetailLayer', () => {
     const client = spawn('client-a');
     const tui = makeTui();
     const connectionChanges: boolean[] = [];
-    const layer = new CouncilDetailLayer(theme, tui as never, entry, client, () => {}, connected => connectionChanges.push(connected));
+    const layer = new CouncilDetailLayer(
+      theme,
+      tui as never,
+      entry,
+      client,
+      () => {},
+      connected => connectionChanges.push(connected),
+    );
     await Bun.sleep(10);
     expect(client.isConnected()).toBe(false);
 
@@ -166,7 +197,14 @@ describe('CouncilDetailLayer', () => {
 
     const tui = makeTui();
     const connectionChanges: boolean[] = [];
-    const layer = new CouncilDetailLayer(theme, tui as never, entry, host, () => {}, connected => connectionChanges.push(connected));
+    const layer = new CouncilDetailLayer(
+      theme,
+      tui as never,
+      entry,
+      host,
+      () => {},
+      connected => connectionChanges.push(connected),
+    );
     await Bun.sleep(10);
 
     layer.handleNavigation('confirm');
