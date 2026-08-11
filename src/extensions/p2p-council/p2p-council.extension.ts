@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { ConfigProvider } from '../../config/config-loader';
+import { PathUtil } from '../../utils/path.util';
 import { formatPeerBatch, formatPeerMessage, formatRemotePrompt, renderP2pCouncilMessage } from './communication-presentation';
 import { COMMAND_NAME, PI_VIM_KEY_EVENT_ID } from './constants';
 import { resolveP2pIdentity } from './identity.util';
@@ -149,6 +150,18 @@ export function activateP2pCouncil(
     // through `_refreshToolRegistry({ includeAllExtensionTools: true })` before emitting
     // `session_start`. This reconcile re-establishes the connection gate; it is not redundant.
     updateP2pTools(state.isConnected());
+  });
+
+  pi.on('resources_discover', (_event, ctx) => {
+    const promptPath = PathUtil.findPromptFolder('p2p_council');
+    if (!promptPath.exists) {
+      ctx.ui.notify(`pi-arsenal: Prompt folder not found for p2p_council: ${promptPath.path}`, 'error');
+      return {};
+    }
+
+    return {
+      promptPaths: [promptPath.path],
+    };
   });
 
   pi.on('session_shutdown', (event, ctx) => {

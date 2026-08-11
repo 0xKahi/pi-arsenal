@@ -1,5 +1,5 @@
 import type { Theme } from '@earendil-works/pi-coding-agent';
-import type { TUI } from '@earendil-works/pi-tui';
+import { type TUI, wrapTextWithAnsi } from '@earendil-works/pi-tui';
 import { fitLine, type Hint, type ModalLayer, type NavigationAction } from '../../../libs/modal';
 import { FormatUtil } from '../format.util';
 import type { P2pCouncilState, P2pRosterEntry } from '../p2p-council-state';
@@ -60,7 +60,7 @@ export class CouncilDetailLayer implements ModalLayer {
     else lines.push('  (unknown)');
     lines.push('');
     lines.push(this.theme.fg('toolTitle', `Clients (${clients.length}):`));
-    if (clients.length === 0) lines.push('  (none)');
+    if (clients.length === 0) lines.push('(none)');
     for (const client of clients) lines.push(...this.renderMember(client.identity, client.status));
 
     return lines;
@@ -71,9 +71,9 @@ export class CouncilDetailLayer implements ModalLayer {
     const statusStr = status ? `${FormatUtil.formatStatus(status)}` : '';
     const lines: string[] = [];
     lines.push(`${this.theme.fg('mdHeading', `[${identity.name}]`)} ${this.theme.fg('dim', statusStr)}`);
-    lines.push(`  model: ${this.theme.fg('syntaxString', model)}`);
-    if (identity.description) lines.push(`  description: ${this.theme.fg('syntaxString', identity.description)}`);
-    if (identity.cwd) lines.push(`  cwd: ${this.theme.fg('mdLinkUrl', identity.cwd)}`);
+    lines.push(`model: ${this.theme.fg('syntaxString', model)}`);
+    if (identity.description) lines.push(`description: ${this.theme.fg('syntaxString', identity.description)}`);
+    if (identity.cwd) lines.push(`cwd: ${this.theme.fg('mdLinkUrl', identity.cwd)}`);
     return lines;
   }
 
@@ -109,7 +109,8 @@ export class CouncilDetailLayer implements ModalLayer {
 
   public render(width: number, height: number | undefined): string[] {
     const lines = this.isConnectedToThis() ? this.rosterLines(this.state.getRoster()) : this.lines;
-    const rendered = lines.map(line => fitLine(line, width));
+    const lineWidth = Math.max(1, width);
+    const rendered = lines.flatMap(line => wrapTextWithAnsi(line, lineWidth).map(wrapped => fitLine(wrapped, lineWidth)));
     if (height === undefined) return rendered;
     const bounded = rendered.slice(0, height);
     while (bounded.length < height) bounded.push('');
