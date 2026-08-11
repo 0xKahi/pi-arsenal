@@ -1,5 +1,11 @@
 # @0xkahi/pi-arsenal
 
+## 0.2.4
+
+### Patch Changes
+
+- df812f0: added text-wrap to p2p_council modal and added `council-assign` prompt
+
 ## 0.2.3
 
 ### Patch Changes
