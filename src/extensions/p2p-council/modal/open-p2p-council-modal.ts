@@ -32,7 +32,7 @@ export function buildCouncilModalFactory(
       emptyMessage: 'No councils registered yet - select "create new"',
       onConfirm: item => {
         if (item.kind === 'create') {
-          tabContext?.pushLayer(new CreateCouncilLayer(theme, tui, state, closeModal, onConnectionChange));
+          tabContext?.pushLayer(new CreateCouncilLayer(theme, tui, state, closeModal, onConnectionChange, tabContext));
           return;
         }
         tabContext?.pushLayer(
@@ -46,6 +46,7 @@ export function buildCouncilModalFactory(
               onConnectionChange?.(connected);
               closeModal();
             },
+            tabContext,
           ),
         );
       },

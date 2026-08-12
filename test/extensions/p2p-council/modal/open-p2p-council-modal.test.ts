@@ -109,9 +109,81 @@ describe('buildCouncilModalFactory', () => {
     dialog.handleInput('\r');
     await Bun.sleep(30);
 
+    // The council name alone advances to the member-name step; nothing is created yet.
+    expect(state.isConnected()).toBe(false);
+    expect(results).toEqual([]);
+    expect(dialog.render(60).join('\n')).toContain('agent-a');
+
+    dialog.handleInput('\r');
+    await Bun.sleep(30);
+
     expect(results).toEqual([{ action: 'close' }]);
     expect(connectionChanges).toEqual([true]);
     expect(state.getCouncilName()).toBe('jkgq-council');
+    expect(state.getSelfName()).toBe('agent-a');
+  });
+
+  test('create flow hosts under a member name edited at the second step', async () => {
+    const state = spawn('agent-a');
+    const factory = buildCouncilModalFactory(state, []);
+    const dialog = factory(makeTui() as never, theme, keybindings, () => undefined, 'inline') as ModalDialog<P2pCouncilModalResult>;
+    dialog.focused = true;
+
+    dialog.handleInput('\r');
+    for (const char of 'named-council') dialog.handleInput(char);
+    dialog.handleInput('\r');
+    await Bun.sleep(30);
+
+    for (const char of '-host') dialog.handleInput(char);
+    dialog.handleInput('\r');
+    await Bun.sleep(30);
+
+    expect(state.getCouncilName()).toBe('named-council');
+    expect(state.getSelfName()).toBe('agent-a-host');
+    expect(state.getDefaultName()).toBe('agent-a');
+  });
+
+  test('Esc from the member-name step returns to a populated council-name field', async () => {
+    const state = spawn('agent-a');
+    const factory = buildCouncilModalFactory(state, []);
+    const dialog = factory(makeTui() as never, theme, keybindings, () => undefined, 'inline') as ModalDialog<P2pCouncilModalResult>;
+    dialog.focused = true;
+
+    dialog.handleInput('\r');
+    for (const char of 'kept-council') dialog.handleInput(char);
+    dialog.handleInput('\r');
+    await Bun.sleep(30);
+
+    dialog.handleInput('\x1b');
+    await Bun.sleep(10);
+
+    expect(state.isConnected()).toBe(false);
+    const rendered = dialog.render(60).join('\n');
+    expect(rendered).toContain('kept-council');
+    expect(rendered).toContain('Register Council Name');
+  });
+
+  test('a duplicate council name never reaches the member-name step', async () => {
+    const host = spawn('host-a');
+    await host.createCouncil('taken-council');
+    const entry = registry.read('taken-council');
+    if (!entry) throw new Error('missing entry');
+
+    const state = spawn('agent-a');
+    const factory = buildCouncilModalFactory(state, [entry]);
+    const dialog = factory(makeTui() as never, theme, keybindings, () => undefined, 'inline') as ModalDialog<P2pCouncilModalResult>;
+    dialog.focused = true;
+
+    dialog.handleInput('j');
+    dialog.handleInput('\r');
+    for (const char of 'taken-council') dialog.handleInput(char);
+    dialog.handleInput('\r');
+    await Bun.sleep(30);
+
+    const rendered = dialog.render(60).join('\n');
+    expect(rendered).toContain('already exists');
+    expect(rendered).toContain('Register Council Name');
+    expect(state.isConnected()).toBe(false);
   });
 
   test('Esc cancels create and duplicate errors remain inline', async () => {
