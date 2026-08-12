@@ -1,9 +1,17 @@
 import type { Theme } from '@earendil-works/pi-coding-agent';
 import { Input, Key, matchesKey, type TUI } from '@earendil-works/pi-tui';
-import { fitLine, type Hint, type ModalLayer, type NavigationAction } from '../../../libs/modal';
+import { fitLine, type Hint, type ModalLayer, type ModalTabContext, type NavigationAction } from '../../../libs/modal';
 import type { P2pCouncilState } from '../p2p-council-state';
+import { MemberNameLayer } from './member-name-layer';
 
-/** Text-focused layer that creates a council without leaving the custom modal. */
+/**
+ * Text-focused layer that creates a council without leaving the custom modal.
+ *
+ * Submitting a valid council name pushes the member-name step rather than creating the
+ * council, so nothing is created until the creating session's own name is confirmed. This
+ * layer stays on the stack with its entered value, which is what lets Esc from the
+ * member-name step return to a populated council-name field.
+ */
 export class CreateCouncilLayer implements ModalLayer {
   public readonly inputPolicy = 'text-focused' as const;
   private readonly input = new Input();
@@ -17,6 +25,7 @@ export class CreateCouncilLayer implements ModalLayer {
     private readonly state: P2pCouncilState,
     private readonly onCreated: () => void | Promise<void>,
     private readonly onConnectionChange?: (connected: boolean) => void,
+    private readonly tabContext?: ModalTabContext,
   ) {}
 
   public get focused(): boolean {
@@ -28,7 +37,7 @@ export class CreateCouncilLayer implements ModalLayer {
   }
 
   public hints(): Hint[] {
-    return this.busy ? [['...', 'Creating']] : [['Enter', 'Create']];
+    return this.busy ? [['...', 'Checking']] : [['Enter', 'Next']];
   }
 
   public handleInput(data: string): void {
@@ -47,7 +56,7 @@ export class CreateCouncilLayer implements ModalLayer {
 
   public render(width: number, height: number | undefined): string[] {
     const lines = [this.theme.fg('mdHeading', 'Register Council Name'), '', ...this.input.render(width)];
-    if (this.busy) lines.push('', this.theme.fg('muted', 'Creating council...'));
+    if (this.busy) lines.push('', this.theme.fg('muted', 'Checking council name...'));
     else if (this.error) lines.push('', this.theme.fg('error', this.error));
     const rendered = lines.map(line => fitLine(line, width));
     if (height === undefined) return rendered;
@@ -81,16 +90,31 @@ export class CreateCouncilLayer implements ModalLayer {
     this.busy = true;
     this.error = undefined;
     this.tui.requestRender();
-    const result = await this.state.createCouncil(name);
-    if (result.success) this.onConnectionChange?.(true);
+    // Reject a name that cannot be created before asking for a member name, so the user is
+    // never prompted for a council that will fail anyway.
+    const conflict = await this.state.findLiveCouncilConflict(name);
     if (!this.active) return;
     this.busy = false;
-    if (!result.success) {
-      this.error = result.error;
+    if (conflict) {
+      this.error = conflict;
       this.tui.requestRender();
       return;
     }
-    await this.onCreated();
+
+    this.tabContext?.pushLayer(
+      new MemberNameLayer(
+        this.theme,
+        this.tui,
+        this.state.getDefaultName(),
+        `Create "${name}" as`,
+        memberName => this.state.createCouncil(name, memberName),
+        async () => {
+          this.tabContext?.popLayer();
+          this.onConnectionChange?.(true);
+          await this.onCreated();
+        },
+      ),
+    );
     this.tui.requestRender();
   }
 }

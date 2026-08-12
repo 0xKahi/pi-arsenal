@@ -207,6 +207,16 @@ export class P2pCouncilState {
     return this.selfName;
   }
 
+  /**
+   * The name resolved once from `<cwd>/.arsenal/p2p-role.yml` (or the cwd basename).
+   * Distinct from `getSelfName()`, which tracks the name currently registered with a
+   * council and may carry a host-assigned dedupe suffix. UI prefills must read this so
+   * suffixes cannot accumulate across successive connections.
+   */
+  public getDefaultName(): string {
+    return this.identity.name;
+  }
+
   public isConnected(): boolean {
     return this.connectionType !== 'disconnected';
   }
@@ -344,7 +354,24 @@ export class P2pCouncilState {
 
   // ── Create / join / disconnect ──────────────────────────────────────────
 
-  public async createCouncil(name: string): Promise<CreateCouncilResult> {
+  /**
+   * Why `name` is unavailable for a new council, as a user-facing message, or `undefined`
+   * when it is free. Lets the UI reject a council name before collecting a member name.
+   * Read-only: stale entries are still pruned by `createCouncil`, which re-checks.
+   */
+  public async findLiveCouncilConflict(name: string): Promise<string | undefined> {
+    const existing = this.registry.read(name);
+    if (existing && (await isEntryLive(existing))) return `Council "${name}" already exists and is live.`;
+    return undefined;
+  }
+
+  /**
+   * `memberName` overrides the registration name for this connection only. It is applied
+   * immediately before hosting so that a failure earlier in this method cannot leave the
+   * session carrying a name it never registered under. Reconnection and promotion re-enter
+   * via the private `startHost`/`connectAsClient` and therefore keep the current name.
+   */
+  public async createCouncil(name: string, memberName?: string): Promise<CreateCouncilResult> {
     if (this.isConnected()) this.disconnect('manual');
 
     const existing = this.registry.read(name);
@@ -353,12 +380,15 @@ export class P2pCouncilState {
     }
     if (existing) this.registry.remove(name);
 
+    if (memberName) this.selfName = memberName;
     return this.startHost(name, undefined);
   }
 
-  public async joinCouncil(entry: CouncilRegistryEntry): Promise<JoinCouncilResult> {
+  /** `memberName` overrides the registration name for this connection only. See `createCouncil`. */
+  public async joinCouncil(entry: CouncilRegistryEntry, memberName?: string): Promise<JoinCouncilResult> {
     if (this.isConnected()) this.disconnect('manual');
     this.manuallyDisconnected = false;
+    if (memberName) this.selfName = memberName;
     const result = await this.connectAsClient(entry.name, entry.port);
     if (!result.success) return result;
     return { success: true, councilName: entry.name };

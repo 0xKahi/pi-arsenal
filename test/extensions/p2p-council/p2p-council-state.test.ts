@@ -167,6 +167,83 @@ describe('P2pCouncilState', () => {
     expect(client2.getSelfName()).toBe('same-name-2');
   });
 
+  test('getDefaultName returns the resolved identity name', () => {
+    const state = spawn('fixer');
+    expect(state.getDefaultName()).toBe('fixer');
+    expect(state.getSelfName()).toBe('fixer');
+  });
+
+  test('joinCouncil registers under an overridden member name', async () => {
+    const host = spawn('host-a');
+    await host.createCouncil('team-override');
+    const entry = registry.read('team-override');
+    if (!entry) throw new Error('missing entry');
+
+    const client = spawn('fixer');
+    await client.joinCouncil(entry, 'fixer-ui');
+    await Bun.sleep(20);
+
+    expect(client.getSelfName()).toBe('fixer-ui');
+    expect(host.getRoster().some(member => member.identity.name === 'fixer-ui')).toBe(true);
+  });
+
+  test('joinCouncil without an override registers under the default name', async () => {
+    const host = spawn('host-a');
+    await host.createCouncil('team-default');
+    const entry = registry.read('team-default');
+    if (!entry) throw new Error('missing entry');
+
+    const client = spawn('fixer');
+    await client.joinCouncil(entry);
+    await Bun.sleep(20);
+
+    expect(client.getSelfName()).toBe('fixer');
+  });
+
+  test('createCouncil hosts under an overridden member name', async () => {
+    const host = spawn('fixer');
+    const result = await host.createCouncil('team-host-override', 'fixer-host');
+
+    expect(result.success).toBe(true);
+    expect(host.getSelfName()).toBe('fixer-host');
+  });
+
+  test('an overridden member name is deduplicated like any other name', async () => {
+    const host = spawn('host-a');
+    await host.createCouncil('team-override-dup');
+    const entry = registry.read('team-override-dup');
+    if (!entry) throw new Error('missing entry');
+
+    const client1 = spawn('alpha');
+    await client1.joinCouncil(entry, 'shared');
+    const client2 = spawn('beta');
+    await client2.joinCouncil(entry, 'shared');
+    await Bun.sleep(20);
+
+    expect(client1.getSelfName()).toBe('shared');
+    expect(client2.getSelfName()).toBe('shared-2');
+  });
+
+  test('getDefaultName is unaffected by an override or a host-assigned dedupe suffix', async () => {
+    const host = spawn('host-a');
+    await host.createCouncil('team-default-stable');
+    const entry = registry.read('team-default-stable');
+    if (!entry) throw new Error('missing entry');
+
+    const squatter = spawn('squatter');
+    await squatter.joinCouncil(entry, 'fixer');
+
+    const client = spawn('fixer');
+    await client.joinCouncil(entry, 'fixer');
+    await Bun.sleep(20);
+
+    expect(client.getSelfName()).toBe('fixer-2');
+    expect(client.getDefaultName()).toBe('fixer');
+
+    client.disconnect('manual');
+    expect(client.getDefaultName()).toBe('fixer');
+  });
+
   test('status propagates from client to host and back to other members', async () => {
     const host = spawn('host-a');
     await host.createCouncil('team-d');

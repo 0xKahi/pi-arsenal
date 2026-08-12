@@ -28,6 +28,10 @@ Anything a remote agent needs — file paths, task state, expected output, where
 - when assigning tasks to agents be specific about the task, do not assign the same task to multiple agents in the same `cwd` 
   to avoid duplicate work, file edits etc. 
 
+**Tips:**
+- you can parallelize synchronous tasks by using `p2p_ask` with multiple agents at once, allowing for faster execution.
+- for members with the same domain and role, you can split tasks between them to increase efficiency and reduce workload on a single agent. example fix 4 files -> agent1 fixes 2 files, agent2 fixes 2 files.
+
 ## Defining Agent Identity 
 
 each agent has a should have a unique identity and purpose form the `p2p_ls` tool

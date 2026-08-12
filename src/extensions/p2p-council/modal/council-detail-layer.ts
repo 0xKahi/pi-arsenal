@@ -1,15 +1,19 @@
 import type { Theme } from '@earendil-works/pi-coding-agent';
 import { type TUI, wrapTextWithAnsi } from '@earendil-works/pi-tui';
-import { fitLine, type Hint, type ModalLayer, type NavigationAction } from '../../../libs/modal';
+import { fitLine, type Hint, type ModalLayer, type ModalTabContext, type NavigationAction } from '../../../libs/modal';
 import { FormatUtil } from '../format.util';
 import type { P2pCouncilState, P2pRosterEntry } from '../p2p-council-state';
 import type { P2pIdentity, P2pStatus } from '../protocol.types';
 import type { CouncilRegistryEntry } from '../registry.util';
+import { MemberNameLayer } from './member-name-layer';
 
 /**
  * Detail view for one council. For the currently connected council, renders the live
  * local roster; for any other council, peeks it for a read-only snapshot without
  * joining. `Enter` connects or disconnects depending on current state.
+ *
+ * Connecting first pushes the member-name step and joins only once a valid name is
+ * submitted; disconnecting takes effect immediately with no member-name step.
  */
 export class CouncilDetailLayer implements ModalLayer {
   private lines: string[] = ['Loading...'];
@@ -24,6 +28,7 @@ export class CouncilDetailLayer implements ModalLayer {
     private readonly state: P2pCouncilState,
     private readonly onStateChange: () => void,
     private readonly onConnectionChange?: (connected: boolean) => void,
+    private readonly tabContext?: ModalTabContext,
   ) {
     this.unsubscribe = state.subscribe(() => tui.requestRender());
     void this.load();
@@ -88,21 +93,40 @@ export class CouncilDetailLayer implements ModalLayer {
 
   public handleNavigation(action: NavigationAction): void {
     if (action !== 'confirm' || this.busy) return;
+
+    if (!this.isConnectedToThis()) {
+      this.pushMemberNameStep();
+      return;
+    }
+
     this.busy = true;
-    void this.toggleConnection().finally(() => {
+    void this.disconnectFromThis().finally(() => {
       this.busy = false;
       this.tui.requestRender();
     });
   }
 
-  private async toggleConnection(): Promise<void> {
-    if (this.isConnectedToThis()) {
-      this.state.disconnect('manual');
-      this.onConnectionChange?.(false);
-    } else {
-      const result = await this.state.joinCouncil(this.entry);
-      if (result.success) this.onConnectionChange?.(true);
-    }
+  private pushMemberNameStep(): void {
+    this.tabContext?.pushLayer(
+      new MemberNameLayer(
+        this.theme,
+        this.tui,
+        this.state.getDefaultName(),
+        `Join "${this.entry.name}" as`,
+        name => this.state.joinCouncil(this.entry, name),
+        async () => {
+          this.tabContext?.popLayer();
+          this.onConnectionChange?.(true);
+          this.onStateChange();
+          await this.load();
+        },
+      ),
+    );
+  }
+
+  private async disconnectFromThis(): Promise<void> {
+    this.state.disconnect('manual');
+    this.onConnectionChange?.(false);
     this.onStateChange();
     await this.load();
   }

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Theme } from '@earendil-works/pi-coding-agent';
 import { visibleWidth } from '@earendil-works/pi-tui';
+import type { ModalLayer } from '../../../../src/libs/modal';
 import { CouncilDetailLayer } from '../../../../src/extensions/p2p-council/modal/council-detail-layer';
 import { P2pCouncilState, type P2pCouncilStateDeps } from '../../../../src/extensions/p2p-council/p2p-council-state';
 import { CouncilRegistry } from '../../../../src/extensions/p2p-council/registry.util';
@@ -37,6 +38,25 @@ function makeTui() {
     get renders() {
       return renders;
     },
+  };
+}
+
+const ENTER = '\r';
+
+/** Minimal stand-in for the dialog's per-tab layer stack. */
+function makeTabContext() {
+  const stack: ModalLayer[] = [];
+  return {
+    context: {
+      pushLayer: (layer: ModalLayer) => {
+        stack.push(layer);
+      },
+      popLayer: () => {
+        stack.pop()?.dispose?.();
+      },
+    },
+    top: () => stack[stack.length - 1],
+    depth: () => stack.length,
   };
 }
 
@@ -165,6 +185,7 @@ describe('CouncilDetailLayer', () => {
     const client = spawn('client-a');
     const tui = makeTui();
     const connectionChanges: boolean[] = [];
+    const tabContext = makeTabContext();
     const layer = new CouncilDetailLayer(
       theme,
       tui as never,
@@ -172,11 +193,19 @@ describe('CouncilDetailLayer', () => {
       client,
       () => {},
       connected => connectionChanges.push(connected),
+      tabContext.context,
     );
     await Bun.sleep(10);
     expect(client.isConnected()).toBe(false);
 
+    // Confirm pushes the member-name step; it must not join on its own.
     layer.handleNavigation('confirm');
+    await Bun.sleep(10);
+    expect(tabContext.depth()).toBe(1);
+    expect(client.isConnected()).toBe(false);
+    expect(tabContext.top()?.render(40, undefined).join('\n')).toContain('client-a');
+
+    tabContext.top()?.handleInput(ENTER);
     await Bun.sleep(30);
 
     expect(client.isConnected()).toBe(true);
@@ -189,6 +218,63 @@ describe('CouncilDetailLayer', () => {
     expect(rendered).toContain('client-a');
   });
 
+  test('a custom member name submitted at the step is what joins the council', async () => {
+    const host = spawn('host-a');
+    await host.createCouncil('named-join-council');
+    const entry = registry.read('named-join-council');
+    if (!entry) throw new Error('missing entry');
+
+    const client = spawn('fixer');
+    const tabContext = makeTabContext();
+    const layer = new CouncilDetailLayer(theme, makeTui() as never, entry, client, () => {}, undefined, tabContext.context);
+    await Bun.sleep(10);
+
+    layer.handleNavigation('confirm');
+    await Bun.sleep(10);
+    const step = tabContext.top();
+    for (const char of ['-', 'u', 'i']) step?.handleInput(char);
+    step?.handleInput(ENTER);
+    await Bun.sleep(30);
+
+    expect(client.getSelfName()).toBe('fixer-ui');
+    expect(host.getRoster().map(member => member.identity.name)).toContain('fixer-ui');
+    expect(client.getDefaultName()).toBe('fixer');
+  });
+
+  test('Esc-equivalent pop of the member-name step leaves the session unjoined', async () => {
+    const host = spawn('host-a');
+    await host.createCouncil('cancel-join-council');
+    const entry = registry.read('cancel-join-council');
+    if (!entry) throw new Error('missing entry');
+
+    const client = spawn('client-a');
+    const connectionChanges: boolean[] = [];
+    const tabContext = makeTabContext();
+    const layer = new CouncilDetailLayer(
+      theme,
+      makeTui() as never,
+      entry,
+      client,
+      () => {},
+      connected => connectionChanges.push(connected),
+      tabContext.context,
+    );
+    await Bun.sleep(10);
+
+    layer.handleNavigation('confirm');
+    await Bun.sleep(10);
+    expect(tabContext.depth()).toBe(1);
+
+    // The dialog shell maps Esc on a pushed layer to popLayer().
+    tabContext.context.popLayer();
+    await Bun.sleep(20);
+
+    expect(tabContext.depth()).toBe(0);
+    expect(client.isConnected()).toBe(false);
+    expect(connectionChanges).toEqual([]);
+    expect(layer.render(60, undefined).join('\n')).toContain('Council: cancel-join-council');
+  });
+
   test('confirm disconnects from the currently connected council', async () => {
     const host = spawn('host-a');
     await host.createCouncil('disconnect-council');
@@ -197,6 +283,7 @@ describe('CouncilDetailLayer', () => {
 
     const tui = makeTui();
     const connectionChanges: boolean[] = [];
+    const tabContext = makeTabContext();
     const layer = new CouncilDetailLayer(
       theme,
       tui as never,
@@ -204,12 +291,15 @@ describe('CouncilDetailLayer', () => {
       host,
       () => {},
       connected => connectionChanges.push(connected),
+      tabContext.context,
     );
     await Bun.sleep(10);
 
     layer.handleNavigation('confirm');
     await Bun.sleep(30);
 
+    // Disconnect is immediate: no member-name step is pushed.
+    expect(tabContext.depth()).toBe(0);
     expect(host.isConnected()).toBe(false);
     expect(connectionChanges).toEqual([false]);
   });
@@ -218,6 +308,7 @@ describe('CouncilDetailLayer', () => {
     const viewer = spawn('failed-join-viewer');
     const tui = makeTui();
     const connectionChanges: boolean[] = [];
+    const tabContext = makeTabContext();
     const layer = new CouncilDetailLayer(
       theme,
       tui as never,
@@ -225,14 +316,19 @@ describe('CouncilDetailLayer', () => {
       viewer,
       () => {},
       connected => connectionChanges.push(connected),
+      tabContext.context,
     );
     await Bun.sleep(4000);
 
     layer.handleNavigation('confirm');
+    await Bun.sleep(10);
+    tabContext.top()?.handleInput(ENTER);
     await Bun.sleep(4000);
 
     expect(viewer.isConnected()).toBe(false);
     expect(connectionChanges).toEqual([]);
+    // The step stays open with the failure surfaced rather than popping.
+    expect(tabContext.depth()).toBe(1);
   }, 10000);
 
   test('an unreachable council renders an error instead of hanging', async () => {

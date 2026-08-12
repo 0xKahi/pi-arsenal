@@ -274,6 +274,9 @@ describe('registerP2pCouncil lazy activation', () => {
     for (const char of 'transition-council') dialog.handleInput(char);
     dialog.handleInput('\r');
     await Bun.sleep(30);
+    // Council name advances to the member-name step; accept the prefilled default.
+    dialog.handleInput('\r');
+    await Bun.sleep(30);
     expect(runtime.getActiveTools()).toEqual(['read', 'bash', 'p2p_send', 'p2p_ask', 'p2p_ls']);
     await commandPromise;
 
@@ -322,9 +325,13 @@ describe('registerP2pCouncil lazy activation', () => {
     dialog.handleInput('\r');
     await Bun.sleep(20);
     for (let cycle = 0; cycle < 2; cycle++) {
+      // Connect pushes the member-name step; accept the prefilled default to join.
+      dialog.handleInput('\r');
+      await Bun.sleep(20);
       dialog.handleInput('\r');
       await Bun.sleep(30);
       expect(runtime.getActiveTools()).toEqual(['read', 'bash', 'p2p_send', 'p2p_ask', 'p2p_ls']);
+      // Disconnect is immediate, with no member-name step.
       dialog.handleInput('\r');
       await Bun.sleep(30);
       expect(runtime.getActiveTools()).toEqual(['read', 'bash']);

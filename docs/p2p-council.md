@@ -36,6 +36,23 @@ description: Handles API and database work
 
 If the file is absent or invalid, the directory name is used as the agent name.
 
+### Choosing a name at connect time
+
+The resolved name is a **default**, not a fixed identity. Both connect paths in `/p2p-council` present a member-name step immediately before registering:
+
+```
+create:  create new  →  council name  →  member name  →  host the council
+join:    council     →  detail view   →  member name  →  join the council
+```
+
+The input is prefilled with the resolved default name with the caret at the end, so pressing Enter straight through keeps the old behavior. Esc pops one step at a time without connecting.
+
+- The name must be **at least one character** and contain **no whitespace**.
+- Collisions are not checked as you type. A name already taken on the council is deduplicated by the host as usual (`fixer` → `fixer-2`).
+- The prefill is always the resolved default, never a previously assigned name, so dedupe suffixes never accumulate across connections.
+- The chosen name applies to that connection only. It is **not** written back to `p2p-role.yml`, and `description` is still read from that file.
+- Reconnection after a dropped link and promotion to host reuse the session's current name without prompting again.
+
 ## Message delivery
 
 ### Steer messages (`triggerTurn: false`)
