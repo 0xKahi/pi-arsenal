@@ -59,6 +59,184 @@
           ]
         }
       }
+    },
+    "multiverse": {
+      "default": {
+        "enabled": false,
+        "defaultAgent": "default",
+        "maxConcurrency": 5,
+        "subagents": {
+          "explorer": {
+            "enabled": true
+          },
+          "fixer": {
+            "enabled": true
+          },
+          "visualizer": {
+            "enabled": true
+          }
+        }
+      },
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "description": "Enable Multiverse orchestration for parent sessions.",
+          "type": "boolean"
+        },
+        "defaultAgent": {
+          "default": "default",
+          "description": "Initial parent persona when no saved selection exists.",
+          "type": "string",
+          "enum": [
+            "default",
+            "megamind"
+          ]
+        },
+        "maxConcurrency": {
+          "default": 5,
+          "description": "Maximum child interactions running concurrently in one batch.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "subagents": {
+          "default": {
+            "explorer": {
+              "enabled": true
+            },
+            "fixer": {
+              "enabled": true
+            },
+            "visualizer": {
+              "enabled": true
+            }
+          },
+          "description": "Settings for the bundled Multiverse subagents.",
+          "type": "object",
+          "properties": {
+            "explorer": {
+              "default": {
+                "enabled": true
+              },
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "default": true,
+                  "description": "Whether this bundled subagent can be created or continued.",
+                  "type": "boolean"
+                },
+                "model": {
+                  "description": "Optional preferred model; the parent model is used when omitted.",
+                  "type": "object",
+                  "properties": {
+                    "provider": {
+                      "type": "string"
+                    },
+                    "modelId": {
+                      "type": "string"
+                    },
+                    "reasoning": {
+                      "type": "string",
+                      "enum": [
+                        "off",
+                        "minimal",
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            },
+            "fixer": {
+              "default": {
+                "enabled": true
+              },
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "default": true,
+                  "description": "Whether this bundled subagent can be created or continued.",
+                  "type": "boolean"
+                },
+                "model": {
+                  "description": "Optional preferred model; the parent model is used when omitted.",
+                  "type": "object",
+                  "properties": {
+                    "provider": {
+                      "type": "string"
+                    },
+                    "modelId": {
+                      "type": "string"
+                    },
+                    "reasoning": {
+                      "type": "string",
+                      "enum": [
+                        "off",
+                        "minimal",
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            },
+            "visualizer": {
+              "default": {
+                "enabled": true
+              },
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "default": true,
+                  "description": "Whether this bundled subagent can be created or continued.",
+                  "type": "boolean"
+                },
+                "model": {
+                  "description": "Optional preferred model; the parent model is used when omitted.",
+                  "type": "object",
+                  "properties": {
+                    "provider": {
+                      "type": "string"
+                    },
+                    "modelId": {
+                      "type": "string"
+                    },
+                    "reasoning": {
+                      "type": "string",
+                      "enum": [
+                        "off",
+                        "minimal",
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

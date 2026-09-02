@@ -42,6 +42,16 @@ describe('ConfigLoader', () => {
       fileCommand: 'nvim',
     });
     expect(result.config.p2p_council).toEqual({ enabled: false, layout: 'inline' });
+    expect(result.config.multiverse).toEqual({
+      enabled: false,
+      defaultAgent: 'default',
+      maxConcurrency: 5,
+      subagents: {
+        explorer: { enabled: true },
+        fixer: { enabled: true },
+        visualizer: { enabled: true },
+      },
+    });
   });
 
   it('initializes one shared provider for extensions', () => {
@@ -53,6 +63,7 @@ describe('ConfigLoader', () => {
     expect(result.success).toBe(true);
     expect(loader.getTmuxPopup().enabled).toBe(true);
     expect(loader.getP2pCouncil()).toEqual({ enabled: true, layout: 'overlay' });
+    expect(loader.getMultiverse().enabled).toBe(false);
   });
 
   it('resets the shared provider to defaults when reinitialization fails', () => {
@@ -143,6 +154,72 @@ describe('ConfigLoader', () => {
     if (!result.success) return;
     expect(result.config.tmux_popup.enabled).toBe(true);
     expect(result.config.tmux_popup.width).toBe(50);
+  });
+
+  it('deep-merges trusted project subagent model settings over global values', () => {
+    writeFileSync(
+      globalPath,
+      JSON.stringify({
+        multiverse: {
+          enabled: true,
+          maxConcurrency: 7,
+          subagents: { explorer: { enabled: true, model: { provider: 'openai', modelId: 'one', reasoning: 'high' } } },
+        },
+      }),
+    );
+    writeFileSync(projectPath, JSON.stringify({ multiverse: { subagents: { explorer: { model: { modelId: 'two' } } } } }));
+
+    const result = ConfigLoader.load(createCtx(true, tmpDir), createResolver(globalPath, projectPath));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.config.multiverse.enabled).toBe(true);
+    expect(result.config.multiverse.maxConcurrency).toBe(7);
+    expect(result.config.multiverse.subagents.explorer.model).toEqual({
+      provider: 'openai',
+      modelId: 'two',
+      reasoning: 'high',
+    });
+    expect(result.config.multiverse.subagents.fixer.enabled).toBe(true);
+  });
+
+  it.each([0, 11, 1.5])('isolates an invalid Multiverse concurrency value %p', maxConcurrency => {
+    writeFileSync(globalPath, JSON.stringify({ tmux_popup: { enabled: true }, multiverse: { enabled: true, maxConcurrency } }));
+
+    const result = ConfigLoader.load(createCtx(false, tmpDir), createResolver(globalPath));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.config.tmux_popup.enabled).toBe(true);
+    expect(result.config.multiverse.enabled).toBe(false);
+    expect(result.warnings.join('\n')).toContain('maxConcurrency');
+  });
+
+  it('rejects unknown per-subagent fields and disables only Multiverse', () => {
+    writeFileSync(
+      globalPath,
+      JSON.stringify({ p2p_council: { enabled: true }, multiverse: { enabled: true, subagents: { fixer: { concurrency: 2 } } } }),
+    );
+
+    const result = ConfigLoader.load(createCtx(false, tmpDir), createResolver(globalPath));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.config.p2p_council.enabled).toBe(true);
+    expect(result.config.multiverse.enabled).toBe(false);
+    expect(result.warnings.join('\n')).toContain('concurrency');
+  });
+
+  it('identifies an unknown subagent reasoning level without disabling unrelated features', () => {
+    writeFileSync(
+      globalPath,
+      JSON.stringify({ tmux_popup: { enabled: true }, multiverse: { subagents: { explorer: { model: { reasoning: 'extreme' } } } } }),
+    );
+
+    const result = ConfigLoader.load(createCtx(false, tmpDir), createResolver(globalPath));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.config.tmux_popup.enabled).toBe(true);
+    expect(result.config.multiverse.enabled).toBe(false);
+    expect(result.warnings.join('\n')).toContain('reasoning');
+    expect(result.warnings.join('\n')).toContain('extreme');
   });
 
   it('fails on malformed configuration', () => {
