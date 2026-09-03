@@ -90,8 +90,8 @@
 
 Supersedes the field sets built in 9.1, 9.3, 9.4, 9.5, 10.1, and 11.2, per design decisions D13, D14, and D16.
 
-- [ ] 13.1 Remove `TouchLedger`, `FILE_MODIFYING_TOOL_NAMES`, and `observedPaths` entirely from `ChildInteraction`, the result envelope, tool details, the manifest, and the presenter; verify no file-touch data is collected, stored, or rendered anywhere, and that documentation points users to a child's own session file or the working tree instead.
-- [ ] 13.2 Rework the model-facing result envelope so the tool's final `content` is exactly the frame below and nothing else. Read this literally; earlier attempts added fields that do not belong.
+- [x] 13.1 Remove `TouchLedger`, `FILE_MODIFYING_TOOL_NAMES`, and `observedPaths` entirely from `ChildInteraction`, the result envelope, tool details, the manifest, and the presenter; verify no file-touch data is collected, stored, or rendered anywhere, and that documentation points users to a child's own session file or the working tree instead.
+- [x] 13.2 Rework the model-facing result envelope so the tool's final `content` is exactly the frame below and nothing else. Read this literally; earlier attempts added fields that do not belong.
 
   ```
   Spawn results (2) · boundary a4f9c2
@@ -124,8 +124,8 @@ Supersedes the field sets built in 9.1, 9.3, 9.4, 9.5, 10.1, and 11.2, per desig
   - Forbidden anywhere in model-facing content: `interactionId`, `name`, `taskIndex`, `checkpointBefore`, `checkpointAfter`, `observedPaths`, any file path, any session-file path, and all telemetry (model identity, duration, request counts, token counts, cost). These remain available in tool details and the manifest for the user.
 
   Verify with a snapshot test asserting the exact string for a mixed success/failure/aborted batch, and an assertion that no forbidden key appears in `content`.
-- [ ] 13.4 Stop leaking progress into model context: `onUpdate` currently publishes the full progress render into model-facing `content` while sending `details` with an empty `interactions` array. Invert it so partial updates carry live progress in `details` and a single short static receipt line in `content`, and so the settled `content` is only the 13.2 envelope; verify partial and final content snapshots contain no per-task progress text.
-- [ ] 13.3 Raise the output cap threshold to a value validated against real subagent output so it fires only on runaway output, point the truncation notice at continuing the child session rather than its session-file path, and insert an inline marker at the truncation cut point; verify the constant has one declared source instead of duplicating between `constants.ts` and `output-cap.ts`.
+- [x] 13.4 Stop leaking progress into model context: `onUpdate` currently publishes the full progress render into model-facing `content` while sending `details` with an empty `interactions` array. Invert it so partial updates carry live progress in `details` and a single short static receipt line in `content`, and so the settled `content` is only the 13.2 envelope; verify partial and final content snapshots contain no per-task progress text.
+- [x] 13.3 Raise the output cap threshold to a value validated against real subagent output so it fires only on runaway output, point the truncation notice at continuing the child session rather than its session-file path, and insert an inline marker at the truncation cut point; verify the constant has one declared source instead of duplicating between `constants.ts` and `output-cap.ts`.
 
 ## 14. Live Spawn Tool Rendering
 

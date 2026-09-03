@@ -18,7 +18,8 @@ describe('ChildInteraction', () => {
 
   it('rejects payloads that are not a complete interaction', () => {
     expect(isChildInteraction({ version: 1 })).toBe(false);
-    expect(isChildInteraction(childInteraction({ observedPaths: undefined as never }))).toBe(false);
+    expect(isChildInteraction(childInteraction({ agent: undefined as never }))).toBe(false);
+    expect(isChildInteraction(childInteraction({ status: 'unknown' as never }))).toBe(false);
     expect(isSpawnToolDetails({ version: 1, kind: 'spawn', interactions: [] })).toBe(true);
     expect(isSpawnToolDetails({ version: 1, kind: 'other', interactions: [] })).toBe(false);
   });

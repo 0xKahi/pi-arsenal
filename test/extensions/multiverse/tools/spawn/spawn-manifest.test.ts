@@ -7,7 +7,7 @@ import {
 import { childInteraction } from '../../interaction-fixture.ts';
 
 describe('SpawnManifest', () => {
-  it('round-trips task interactions, terminal states, observed paths, and telemetry', () => {
+  it('round-trips task interactions, terminal states, and telemetry', () => {
     const manifest: SpawnManifest = {
       version: 1,
       outcome: 'completed',
@@ -15,7 +15,7 @@ describe('SpawnManifest', () => {
       tasks: [
         {
           input: { action: 'create', agent: 'fixer', task: 'x' },
-          interaction: childInteraction({ observedPaths: ['src/a.ts'], body: 'done' }),
+          interaction: childInteraction({ body: 'done' }),
         },
         { input: { action: 'continue', childSessionId: 'child', task: 'x' }, interaction: undefined, error: 'failed' },
       ],

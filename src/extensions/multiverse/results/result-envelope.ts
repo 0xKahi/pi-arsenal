@@ -1,48 +1,51 @@
-import { randomUUID } from 'node:crypto';
-import { RESULT_ENVELOPE_PREFIX } from '../constants.ts';
+import { randomBytes } from 'node:crypto';
+import { RESULT_BOUNDARY_NONCE_BYTES } from '../constants.ts';
 import type { ChildInteraction } from './child-interaction.types.ts';
 
 export interface ResultEnvelope {
   content: string;
-  delimiter: string;
+  /** Per-call random boundary component. Never placed in any child's prompt or context. */
+  nonce: string;
 }
+
+const TRUNCATION_NOTICE = 'truncated: output exceeded the size cap; continue this child session for the remainder or a summary';
 
 /**
- * Frame each child body with a per-call unforgeable delimiter.
+ * Frame each child body with a per-call boundary nonce.
  *
- * Child output is never trusted: any delimiter-like text it emits belongs to a
- * different random run and therefore cannot terminate or forge a neighbouring entry.
- * Telemetry is deliberately absent so model-facing content stays free of it.
+ * Header fields are computed by the runtime and trustworthy; everything between the
+ * RESPONSE and END boundaries is the child's own untrusted report, reproduced
+ * byte-for-byte and never reformatted, validated, or repaired. Because the nonce is
+ * random per call and never disclosed to a child, delimiter-like text a child emits
+ * cannot terminate or forge a neighbouring frame.
+ *
+ * The frame carries only what the parent model can act on, did not itself write, and can
+ * soundly rely on. Interaction IDs, task names, task indices, checkpoints, file paths,
+ * session-file paths, and telemetry are deliberately absent; they live in tool details
+ * and the durable manifest for the user.
  */
 export function buildResultEnvelope(interactions: readonly ChildInteraction[]): ResultEnvelope {
-  const delimiter = `${RESULT_ENVELOPE_PREFIX}-${randomUUID()}`;
-  const content = interactions
-    .map((interaction, index) =>
-      [
-        `${delimiter}-BEGIN-${index}`,
-        `interactionId: ${interaction.interactionId}`,
-        `taskIndex: ${interaction.taskIndex}`,
-        `status: ${interaction.status}`,
-        `agent: ${interaction.agent}`,
-        `name: ${interaction.name ?? ''}`,
-        `childSessionId: ${interaction.childSessionId}`,
-        `checkpointBefore: ${interaction.checkpointBefore ?? 'none'}`,
-        `checkpointAfter: ${interaction.checkpointAfter ?? 'none'}`,
-        `observedPaths: ${interaction.observedPaths.length > 0 ? interaction.observedPaths.join(', ') : 'none'}`,
-        `truncated: ${formatTruncation(interaction)}`,
-        `error: ${interaction.error ?? 'none'}`,
-        `${delimiter}-BODY-${index}`,
-        interaction.body,
-        `${delimiter}-END-${index}`,
-      ].join('\n'),
-    )
-    .join('\n');
+  const nonce = randomBytes(RESULT_BOUNDARY_NONCE_BYTES).toString('hex');
+  const frames = interactions.map((interaction, index) => renderFrame(interaction, index + 1, nonce));
+  const content = [`Spawn results (${interactions.length}) · boundary ${nonce}`, ...frames].join('\n\n');
 
-  return { delimiter, content };
+  return { nonce, content };
 }
 
-function formatTruncation(interaction: ChildInteraction): string {
-  const truncation = interaction.truncation;
-  if (!truncation) return 'no';
-  return `yes; full output in ${truncation.sessionFile} at checkpoint ${truncation.checkpoint ?? 'none'} (${truncation.totalBytes} bytes, ${truncation.totalLines} lines)`;
+/** Boundary task numbers are 1-based; `taskIndex` in tool details stays 0-based. */
+function renderFrame(interaction: ChildInteraction, taskNumber: number, nonce: string): string {
+  const lines = [
+    `--TASK_${taskNumber}_START-${nonce}--`,
+    `agent: ${interaction.agent}`,
+    `childSessionId: ${interaction.childSessionId}`,
+    `status: ${interaction.status}`,
+  ];
+  // Optional lines are sparse: absent entirely rather than rendered as "none".
+  if (interaction.error) lines.push(`error: ${interaction.error}`);
+  if (interaction.truncation) lines.push(TRUNCATION_NOTICE);
+  lines.push(`--TASK_${taskNumber}_RESPONSE-${nonce}--`);
+  if (interaction.body) lines.push(interaction.body);
+  lines.push(`--TASK_${taskNumber}_END-${nonce}--`);
+
+  return lines.join('\n');
 }

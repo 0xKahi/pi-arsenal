@@ -15,7 +15,6 @@ const outcome = (overrides: Partial<ChildInteractionOutcome> = {}): ChildInterac
   text: 'child output',
   checkpointBefore: null,
   checkpointAfter: 'leaf',
-  observedPaths: [],
   telemetry: { durationMs: 1, requests: 1, tokensInput: 1, tokensOutput: 1, cost: 0 },
   ...overrides,
 });

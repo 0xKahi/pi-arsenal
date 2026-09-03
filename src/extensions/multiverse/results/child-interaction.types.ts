@@ -1,5 +1,6 @@
 import type { BundledSubagentName } from '../agents/subagent-definition.ts';
 import { CHILD_INTERACTION_VERSION, INTERACTION_ID_PREFIX } from '../constants.ts';
+import type { TaskProgress } from '../tools/spawn/spawn-progress.ts';
 
 export type ChildInteractionStatus = 'success' | 'failure' | 'aborted';
 
@@ -13,9 +14,13 @@ export interface ChildTelemetry {
   cost: number;
 }
 
+/**
+ * Recorded when a body tripped the output cap.
+ *
+ * Deliberately carries no session-file path or checkpoint: the remedy is continuing the
+ * child session, which still holds its full output, not navigating to a file.
+ */
 export interface OutputTruncation {
-  sessionFile: string;
-  checkpoint: string | null;
   totalBytes: number;
   totalLines: number;
 }
@@ -38,18 +43,23 @@ export interface ChildInteraction {
   childSessionFile: string;
   checkpointBefore: string | null;
   checkpointAfter: string | null;
-  observedPaths: string[];
   body: string;
   error?: string;
   truncation?: OutputTruncation;
   telemetry: ChildTelemetry;
 }
 
-/** Details attached to the spawn tool result. Persisted with the parent tool-result entry. */
+/**
+ * Details attached to the spawn tool result. Persisted with the parent tool-result entry.
+ *
+ * Details never enter model context, so live progress is carried here while a call is
+ * pending rather than in the tool's `content`.
+ */
 export interface SpawnToolDetails {
   version: typeof CHILD_INTERACTION_VERSION;
   kind: 'spawn';
   interactions: ChildInteraction[];
+  progress?: TaskProgress[];
 }
 
 export function createInteractionId(taskIndex: number): string {
@@ -75,7 +85,6 @@ export function isChildInteraction(value: unknown): value is ChildInteraction {
     (candidate.checkpointBefore === null || typeof candidate.checkpointBefore === 'string') &&
     (candidate.checkpointAfter === null || typeof candidate.checkpointAfter === 'string') &&
     typeof candidate.agent === 'string' &&
-    Array.isArray(candidate.observedPaths) &&
     (candidate.status === 'success' || candidate.status === 'failure' || candidate.status === 'aborted')
   );
 }

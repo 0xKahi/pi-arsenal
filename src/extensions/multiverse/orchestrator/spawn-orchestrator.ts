@@ -139,7 +139,7 @@ async function runTask(context: RunTaskInput): Promise<ChildInteraction> {
       },
     });
 
-    const capped = capOutput(outcome.text, handle.sessionFile, outcome.checkpointAfter);
+    const capped = capOutput(outcome.text);
     return {
       version: CHILD_INTERACTION_VERSION,
       interactionId: createInteractionId(index),
@@ -151,7 +151,6 @@ async function runTask(context: RunTaskInput): Promise<ChildInteraction> {
       childSessionFile: handle.sessionFile,
       checkpointBefore: outcome.checkpointBefore,
       checkpointAfter: resolveCheckpointAfter(outcome.checkpointBefore, outcome.checkpointAfter, id => Boolean(handle.sessionManager.getEntry(id))),
-      observedPaths: outcome.observedPaths,
       body: capped.content,
       error: outcome.error,
       truncation: capped.reference,
@@ -184,7 +183,6 @@ function placeholderInteraction(
     childSessionFile: '',
     checkpointBefore: null,
     checkpointAfter: null,
-    observedPaths: [],
     body: '',
     error,
     telemetry: { durationMs: 0, requests: 0, tokensInput: 0, tokensOutput: 0, cost: 0 },

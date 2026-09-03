@@ -28,8 +28,7 @@ export class SubagentIdentityHandler {
   /** Scan every physical session entry so identity is independent of the active branch. */
   static parse(entries: readonly SessionEntry[]): SubagentIdentityResult {
     const markers = entries.filter(
-      (entry): entry is Extract<SessionEntry, { type: 'custom' }> =>
-        entry.type === 'custom' && entry.customType === SUBAGENT_IDENTITY_CUSTOM_TYPE,
+      (entry): entry is Extract<SessionEntry, { type: 'custom' }> => entry.type === 'custom' && entry.customType === SUBAGENT_IDENTITY_CUSTOM_TYPE,
     );
 
     const marker = markers[0];

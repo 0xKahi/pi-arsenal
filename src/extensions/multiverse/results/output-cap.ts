@@ -1,5 +1,10 @@
-export const MAX_OUTPUT_LINES = 500;
-export const MAX_OUTPUT_BYTES = 16 * 1024;
+import { MAX_OUTPUT_BYTES, MAX_OUTPUT_LINES } from '../constants.ts';
+
+// Re-exported, never redeclared: the thresholds have one declared source in constants.ts.
+export { MAX_OUTPUT_BYTES, MAX_OUTPUT_LINES };
+
+/** Inline marker written at the cut point so a severed sentence is not read as a complete one. */
+export const TRUNCATION_MARKER = '\n[... output truncated at the size cap ...]';
 
 export interface OutputLimits {
   maxLines: number;
@@ -9,25 +14,25 @@ export interface OutputLimits {
 export interface TruncatedOutput {
   content: string;
   truncated: boolean;
-  reference?: { sessionFile: string; checkpoint: string | null; totalBytes: number; totalLines: number };
+  reference?: { totalBytes: number; totalLines: number };
 }
 
-/** Bounds model-facing child output while leaving the full text recoverable from its session file. */
-export function capOutput(
-  text: string,
-  sessionFile: string,
-  checkpoint: string | null,
-  limits: OutputLimits = { maxLines: MAX_OUTPUT_LINES, maxBytes: MAX_OUTPUT_BYTES },
-): TruncatedOutput {
+/**
+ * Circuit breaker on runaway child output.
+ *
+ * The remainder is recovered by continuing the child session, which still holds the full
+ * text in its own context, so nothing here depends on a session file path or checkpoint.
+ */
+export function capOutput(text: string, limits: OutputLimits = { maxLines: MAX_OUTPUT_LINES, maxBytes: MAX_OUTPUT_BYTES }): TruncatedOutput {
   const totalBytes = new TextEncoder().encode(text).length;
   const lines = text.split('\n');
   if (totalBytes <= limits.maxBytes && lines.length <= limits.maxLines) return { content: text, truncated: false };
 
   const lineCapped = lines.length > limits.maxLines ? lines.slice(0, limits.maxLines).join('\n') : text;
   return {
-    content: truncateToByteLimit(lineCapped, limits.maxBytes),
+    content: `${truncateToByteLimit(lineCapped, limits.maxBytes)}${TRUNCATION_MARKER}`,
     truncated: true,
-    reference: { sessionFile, checkpoint, totalBytes, totalLines: lines.length },
+    reference: { totalBytes, totalLines: lines.length },
   };
 }
 

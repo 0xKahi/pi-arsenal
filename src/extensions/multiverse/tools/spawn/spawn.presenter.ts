@@ -29,12 +29,11 @@ function renderTask(task: TaskPresentation, index: number, expanded: boolean): s
   if (!expanded) return header;
 
   const interaction = task.interaction;
-  const details = [
-    `child=${interaction?.childSessionId ?? 'pending'}`,
-    `checkpoint=${interaction?.checkpointAfter ?? 'none'}`,
-    `paths=${interaction && interaction.observedPaths.length > 0 ? interaction.observedPaths.join(', ') : 'none'}`,
-  ];
-  if (interaction?.truncation) details.push(`full output: ${interaction.truncation.sessionFile}`);
+  // No file-touch account exists: the child's own session file and the working tree are the sources of truth.
+  const details = [`child=${interaction?.childSessionId ?? 'pending'}`, `checkpoint=${interaction?.checkpointAfter ?? 'none'}`];
+  if (interaction?.truncation) {
+    details.push(`truncated from ${interaction.truncation.totalLines} lines / ${interaction.truncation.totalBytes} bytes`);
+  }
   // Telemetry is user-only and deliberately absent from model-facing content.
   if (interaction) {
     details.push(

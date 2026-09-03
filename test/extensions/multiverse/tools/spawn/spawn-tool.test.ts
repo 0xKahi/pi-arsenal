@@ -25,7 +25,7 @@ describe('createSpawnTool', () => {
     expect(tool.label).toBe('spawn');
     expect(tool.promptSnippet).toContain('spawn(');
     expect(tool.promptGuidelines?.length).toBeGreaterThan(0);
-    expect(tool.description).toContain('durable subagent interactions');
+    expect(tool.description).toContain('subagent');
   });
 
   it('returns the enveloped body plus structured interaction details', async () => {
@@ -35,7 +35,9 @@ describe('createSpawnTool', () => {
 
     const text = result.content[0]?.type === 'text' ? result.content[0].text : '';
     expect(text).toContain('child output');
-    expect(text).toContain('MV-RESULT-');
+    expect(text).toMatch(/^Spawn results \(1\) · boundary [0-9a-f]{6}\n/);
+    expect(text).toContain('--TASK_1_RESPONSE-');
+    expect(text).not.toContain('Spawn dispatched');
     expect(isSpawnToolDetails(result.details)).toBe(true);
     expect(result.details.interactions).toHaveLength(1);
   });
@@ -79,8 +81,9 @@ describe('createSpawnTool', () => {
     expect(appended).toEqual(['arsenal-spawn-manifest']);
   });
 
-  it('emits progress updates that never leak child conversation content', async () => {
+  it('keeps live progress in details and only a fixed receipt in model-facing content', async () => {
     const updates: string[] = [];
+    const detailUpdates: unknown[] = [];
     const tool = createSpawnTool(
       host({
         run: async (_input, _dependencies, options) => {
@@ -99,11 +102,18 @@ describe('createSpawnTool', () => {
       update => {
         const content = update.content?.[0];
         if (content?.type === 'text') updates.push(content.text);
+        detailUpdates.push(update.details);
       },
       ctx,
     );
 
-    expect(updates.join('\n')).toContain('implement (fixer)');
+    // Partial content is fixed text: no task label, agent, tool name, or child prose.
+    expect(updates).toEqual(['Spawn dispatched; waiting for every task to settle.']);
+    expect(updates.join('\n')).not.toContain('implement');
+    expect(updates.join('\n')).not.toContain('fixer');
     expect(updates.join('\n')).not.toContain('secret child output');
+
+    const details = detailUpdates.at(-1) as { progress?: Array<{ index: number; label: string; agent: string; status: string }> };
+    expect(details.progress).toEqual([{ index: 0, label: 'implement', agent: 'fixer', status: 'running' }]);
   });
 });

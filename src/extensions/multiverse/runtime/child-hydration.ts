@@ -1,6 +1,5 @@
 import type { AgentSessionEvent, SessionManager } from '@earendil-works/pi-coding-agent';
 import type { ChildInteractionStatus, ChildTelemetry } from '../results/child-interaction.types.ts';
-import { TouchLedger } from '../results/touch-ledger.ts';
 import { type ChildRuntimeFactories, type CreateChildRuntimeInput, createChildRuntime } from './child-runtime.ts';
 
 export interface ChildInteractionOutcome {
@@ -9,7 +8,6 @@ export interface ChildInteractionOutcome {
   error?: string;
   checkpointBefore: string | null;
   checkpointAfter: string | null;
-  observedPaths: string[];
   telemetry: ChildTelemetry;
 }
 
@@ -33,7 +31,6 @@ export async function hydrateChildInteraction(input: HydrateChildInput, factorie
   selectCheckpoint(input.sessionManager, input.checkpoint);
   const checkpointBefore = input.sessionManager.getLeafId();
 
-  const ledger = new TouchLedger();
   const started = Date.now();
   const runtime = await createChildRuntime(
     {
@@ -55,7 +52,6 @@ export async function hydrateChildInteraction(input: HydrateChildInput, factorie
   try {
     unsubscribe = runtime.session.subscribe(event => {
       events.push(event);
-      ledger.observe(event);
       input.onEvent?.(event);
     });
 
@@ -89,7 +85,6 @@ export async function hydrateChildInteraction(input: HydrateChildInput, factorie
     checkpointBefore,
     // The newest persisted entry is the checkpoint; it falls back to the start point when nothing was written.
     checkpointAfter: input.sessionManager.getLeafId() ?? checkpointBefore,
-    observedPaths: ledger.list(),
     telemetry: { ...collectTelemetry(runtime.session, started), model: `${input.model.provider}/${input.model.id}` },
   };
 }

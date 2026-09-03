@@ -25,11 +25,17 @@ export const SAFE_SESSION_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 /** Identifier prefixes. */
 export const INTERACTION_ID_PREFIX = 'mv-interaction';
-export const RESULT_ENVELOPE_PREFIX = 'MV-RESULT';
 
-/** Model-facing output bounds. Full output stays recoverable from the child session file. */
-export const MAX_OUTPUT_LINES = 500;
-export const MAX_OUTPUT_BYTES = 16 * 1024;
+/** Bytes of randomness behind a result envelope's per-call boundary nonce. */
+export const RESULT_BOUNDARY_NONCE_BYTES = 3;
 
-/** Tools whose arguments identify a file the child modified. */
-export const FILE_MODIFYING_TOOL_NAMES = ['edit', 'write', 'multi_edit', 'apply_patch', 'notebook_edit'] as const;
+/**
+ * Circuit breaker for runaway child output, not a budget for routine reports.
+ *
+ * Sized well above an ordinary subagent final message (a verbose report runs a few
+ * hundred lines and single-digit kilobytes) so the common path never trips it; it exists
+ * only to stop a looping or file-dumping child from consuming the parent's context.
+ * Declared here once: `results/output-cap.ts` re-exports these rather than redeclaring.
+ */
+export const MAX_OUTPUT_LINES = 2_000;
+export const MAX_OUTPUT_BYTES = 64 * 1024;

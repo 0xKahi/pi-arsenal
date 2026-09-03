@@ -12,7 +12,6 @@ export function childInteraction(overrides: Partial<ChildInteraction> = {}): Chi
     childSessionFile: '/sessions/child-1.jsonl',
     checkpointBefore: null,
     checkpointAfter: 'leaf',
-    observedPaths: [],
     body: '',
     telemetry: { model: 'anthropic/model', durationMs: 5, requests: 1, tokensInput: 10, tokensOutput: 5, cost: 0.01 },
     ...overrides,

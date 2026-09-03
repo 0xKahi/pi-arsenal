@@ -13,6 +13,9 @@ import { type ManifestSink, SpawnManifestWriter } from './spawn-manifest-writer.
 
 export { SPAWN_TOOL_NAME };
 
+/** Fixed model-facing text for every partial update; carries no per-task progress. */
+const PARTIAL_RECEIPT = 'Spawn dispatched; waiting for every task to settle.';
+
 export interface SpawnToolHost {
   /** The tool is only callable while this returns dependencies; Default parents and children return undefined. */
   resolve: (ctx: ExtensionContext) => SpawnOrchestratorDependencies | { error: string } | undefined;
@@ -54,10 +57,12 @@ export function createSpawnTool(host: SpawnToolHost): ToolDefinition<typeof spaw
       try {
         run = await (host.run ?? runSpawn)(input, host_, {
           signal,
+          // Partial updates land in model context, so `content` stays a fixed receipt and all
+          // live per-task progress goes to `details`, which the model never sees.
           onProgress: progress =>
             onUpdate?.({
-              content: [{ type: 'text', text: renderSpawnPresentation({ tasks: toPresentation(progress.snapshot()) }) }],
-              details: { version: CHILD_INTERACTION_VERSION, kind: 'spawn', interactions: [] },
+              content: [{ type: 'text', text: PARTIAL_RECEIPT }],
+              details: { version: CHILD_INTERACTION_VERSION, kind: 'spawn', interactions: [], progress: progress.snapshot() },
             }),
         });
       } catch (error) {
@@ -78,13 +83,17 @@ export function createSpawnTool(host: SpawnToolHost): ToolDefinition<typeof spaw
     },
     renderResult(result, { expanded }) {
       const details = isSpawnToolDetails(result.details) ? result.details : undefined;
-      const tasks: TaskPresentation[] = (details?.interactions ?? []).map(interaction => ({
-        status: interaction.status,
-        label: interaction.name ?? `task ${interaction.taskIndex + 1}`,
-        agent: interaction.agent,
-        error: interaction.error,
-        interaction,
-      }));
+      // While the call is pending only live progress exists; settled results supersede it.
+      const tasks: TaskPresentation[] =
+        details && details.interactions.length === 0 && details.progress
+          ? toPresentation(details.progress)
+          : (details?.interactions ?? []).map(interaction => ({
+              status: interaction.status,
+              label: interaction.name ?? `task ${interaction.taskIndex + 1}`,
+              agent: interaction.agent,
+              error: interaction.error,
+              interaction,
+            }));
       const container = new Container();
       container.addChild({
         render: (width: number) =>
@@ -98,7 +107,7 @@ export function createSpawnTool(host: SpawnToolHost): ToolDefinition<typeof spaw
   };
 }
 
-function toPresentation(snapshot: ReturnType<import('./spawn-progress.ts').SpawnProgress['snapshot']>): TaskPresentation[] {
+function toPresentation(snapshot: readonly import('./spawn-progress.ts').TaskProgress[]): TaskPresentation[] {
   return snapshot.map(task => ({
     status: task.status,
     label: task.label,
