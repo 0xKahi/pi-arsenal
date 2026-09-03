@@ -187,10 +187,22 @@ When continuing a child, Multiverse walks active-branch tool results for the lat
 
 **Consequence.** `MAX_OUTPUT_LINES`/`MAX_OUTPUT_BYTES` should be raised from their current placeholder values to a threshold validated against real subagent output, and declared once rather than duplicated between `constants.ts` and `output-cap.ts`.
 
+### D17. Live activity display is not an account of record
+
+**Decision.** While a spawn call is pending, the tool row renders each child's live activity: elapsed time, tool-use count, the current tool name with a summarized input, and terminal outcome. The runtime observes only `agent_start`, `agent_end`, `tool_execution_start`, and `tool_execution_end`, and records tool names and summarized inputs, never tool outputs. This state is held for presentation and persisted into tool details so the settled row can be expanded later. It is deliberately partial and capped.
+
+**Why this does not reintroduce D14.** D14 removed a derived path set that was reported as an account of what a child changed, whose empty value falsely implied "changed nothing" because shell-mediated writes were invisible. An activity display makes no completeness claim: it shows what is happening while it happens. The distinction is the claim, not the storage location. A user asking what a child actually did is directed to that child's own session JSONL, which remains the single source of truth and holds the full transcript at higher fidelity.
+
+**Presentation is a trust boundary too.** Child-derived strings reaching the renderer, including tool arguments the child chose, are stripped of ANSI with `dye.strip` and truncated with ANSI-aware width helpers before styling. This is the terminal-side counterpart of the envelope's boundary nonce: the nonce protects the parent model's parser from forged structure, and sanitization protects the user's terminal from injected escape sequences. Both defend against the same untrusted source at different consumers.
+
+**Surface.** Rendering lives in the tool row through `renderResult` under `isPartial`, not in a `ui.setWidget` panel, because V1 spawn calls block for their whole life and own no state that outlives the call. A panel becomes appropriate only if background dispatch is added later. The component is reused across renders via `context.lastComponent` and drives its own repaint interval, so a child sitting inside one long tool call still shows a moving timer despite emitting no events.
+
+**Consequence.** Tool details grow with a capped activity trail per task, so trail length and stored input length are bounded and the batch task count is bounded. Nothing in this decision reaches model context; the model still receives only the D13 envelope.
+
 ## Risks / Trade-offs
 
 - **Old children change behavior when definitions or extensions update.** -> Intentional rolling behavior; identity stays stable and unavailable definitions fail clearly.
-- **Concurrent fixers can race in a shared working directory.** -> Global concurrency bounds load; prompt-level lane ownership and observed touches aid diagnosis. Structural scopes are deferred.
+- **Concurrent fixers can race in a shared working directory.** -> Global concurrency bounds load and prompt-level lane ownership aids coordination; diagnosis relies on inspecting the shared working tree or a child's own session file. Structural scopes are deferred.
 - **No automatic file-touch observability.** -> Diagnosing a shared-working-directory race relies on the user inspecting the working tree or a child's session file; Multiverse reports no path list at all, so no partial signal can be mistaken for a complete one.
 - **`setActiveTools()` is only one protection layer.** -> Accepted for V1; a future tool-call gate can add defense in depth without changing identity format.
 - **Ambient extensions can alter prompts or activate behavior.** -> Accepted to preserve the user's extension environment; the child base prompt and named role remain deterministic.
@@ -199,6 +211,7 @@ When continuing a child, Multiverse walks active-branch tool results for the lat
 - **No cross-process writer lease.** -> V1 protects managed concurrency only; document that interactive external editing must not overlap a managed interaction.
 - **Parent crash can leave a child turn persisted without a parent reference.** -> Preserve it as orphaned recoverable data; automatic adoption is deferred.
 - **Long-lived child context grows.** -> Native Pi compaction remains available during hydration; exact policy can follow normal settings.
+- **Persisted activity trails grow parent session details.** -> Trail entries per task, stored tool-input length, and batch task count are all capped; the trail is presentation state, and the child's own session file remains the complete record.
 
 ## Migration Plan
 

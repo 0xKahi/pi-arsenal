@@ -8,7 +8,7 @@ Multiverse adds durable subordinate sessions: a parent can create several specia
 
 - Add a disabled-by-default `multiverse` extension under `src/extensions/multiverse/`.
 - Add a blocking batch tool whose ordered tasks can either create a child session for a named subagent or continue an existing child session.
-- Persist every child as a normal Pi JSONL session under `~/.arsenal/subagent_sessions/`, grouped by working directory and parent session ID. Return the durable child session ID and latest valid branch checkpoint after each interaction when one exists.
+- Persist every child as a normal Pi JSONL session under `~/.arsenal/subagent_sessions/`, grouped by working directory and parent session ID. Return the durable child session ID to the parent model after each interaction, and record the latest valid branch checkpoint, when one exists, in tool presentation details and the durable manifest rather than in model context.
 - Give every child session one immutable `arsenal-subagent` custom entry naming its subagent and parent session. On any later SDK or CLI reopen, pi-arsenal uses that identity to apply the current definition for that subagent.
 - Hydrate a child `AgentSession` only while processing an interaction. The logical child and its transcript remain durable after the runtime is disposed.
 - Keep child conversations branch-aware: the active parent branch selects the most recent child checkpoint it references, and a later interaction branches the child from that checkpoint.

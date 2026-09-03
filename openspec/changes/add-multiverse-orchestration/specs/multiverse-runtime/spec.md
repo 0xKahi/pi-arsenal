@@ -93,16 +93,20 @@ For each interaction, the configured subagent model SHALL be preferred and the c
 - **WHEN** no candidate can be used
 - **THEN** only that interaction fails with accumulated reasons
 
-### Requirement: Observed touch ledger
-The runtime SHALL record paths targeted by recognized file-modifying tool events per interaction and report that set without comparing tasks. Shell-mediated writes SHALL remain outside coverage, and child-authored change descriptions SHALL remain separate from observed paths.
+### Requirement: No authoritative file-change record
+The runtime SHALL NOT derive, persist, or report a set of files a child changed as an account of its work, in any interaction result, tool presentation detail, durable manifest, or model-facing content. No per-interaction touch ledger SHALL exist. The runtime MAY observe a child's tool events to drive live batch presentation, recording tool names, summarized tool inputs, and per-call success or failure; it SHALL NOT record tool outputs and SHALL NOT aggregate those observations into a file-change account. A child's own session file remains the complete record of what that child did.
 
-#### Scenario: File tool observed
-- **WHEN** a child invokes a recognized file-modifying tool
-- **THEN** its target path is included in that interaction's observed set
+#### Scenario: File tool is not recorded as a change account
+- **WHEN** a child invokes a file-modifying tool
+- **THEN** no per-interaction path set is derived, and no interaction result, tool presentation detail, or manifest field reports which files that child changed
 
-#### Scenario: Shell write not observed
-- **WHEN** a child modifies a file through shell execution
-- **THEN** the change may be absent from the observed set
+#### Scenario: Activity observation is permitted
+- **WHEN** a child invokes any tool while its batch is pending
+- **THEN** the runtime may surface that tool's name, a summarized input, and its success or failure as live activity, without implying a complete account of the child's changes
+
+#### Scenario: Change inspection uses the child session file
+- **WHEN** a user needs to know what a child actually did
+- **THEN** that child's durable session file and the shared working directory remain the sources of that information
 
 ### Requirement: Batch abort propagation
 Aborting the batch SHALL abort every running interaction, prevent queued tasks from starting, preserve completed results, dispose hydrated runtimes, and retain all durable child sessions and the aborted manifest.
@@ -112,11 +116,15 @@ Aborting the batch SHALL abort every running interaction, prevent queued tasks f
 - **THEN** completed results survive, running and queued tasks are marked aborted, and no child session is deleted
 
 ### Requirement: Output capping
-Captured child output SHALL be bounded. An oversized body SHALL be reduced, marked truncated, and accompanied by the absolute child session file path and child checkpoint needed to locate the complete persisted output, without changing its execution status.
+Captured child output SHALL be bounded by a threshold sized to stop runaway output rather than to shorten routine reports, so ordinary subagent responses are never reduced. An oversized body SHALL be reduced, marked truncated by an inline marker at its cut point, and accompanied by a notice directing the parent to continue that child session to obtain the remainder or a summary, without changing its execution status. The notice SHALL NOT depend on the child's session file path or checkpoint identifier.
 
 #### Scenario: Successful output truncated
 - **WHEN** a successful child's output exceeds the cap
-- **THEN** it remains successful and provides a full-output reference
+- **THEN** it remains successful, carries an inline marker at the cut point, and directs the parent to continue that child session for the remainder
+
+#### Scenario: Routine output is not reduced
+- **WHEN** a child produces ordinary verbose output within the threshold
+- **THEN** its body is returned whole and no truncation notice appears
 
 ### Requirement: Invisible run manifest
 Every batch that dispatched work SHALL append exactly one non-rendered parent custom entry describing its outcome, task interactions, child session IDs and checkpoints, model, duration, and usage. Rejected pre-dispatch calls SHALL append none.

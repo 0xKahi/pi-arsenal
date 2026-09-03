@@ -91,5 +91,51 @@
 Supersedes the field sets built in 9.1, 9.3, 9.4, 9.5, 10.1, and 11.2, per design decisions D13, D14, and D16.
 
 - [ ] 13.1 Remove `TouchLedger`, `FILE_MODIFYING_TOOL_NAMES`, and `observedPaths` entirely from `ChildInteraction`, the result envelope, tool details, the manifest, and the presenter; verify no file-touch data is collected, stored, or rendered anywhere, and that documentation points users to a child's own session file or the working tree instead.
-- [ ] 13.2 Rework the model-facing result envelope to a per-call nonce-scoped boundary encoding task position, carrying only `agent`, `childSessionId`, `status`, a sparse `error` field present only for pre-response failures, and a sparse truncation notice present only when the body was capped; drop `interactionId`, `name`, `checkpointBefore`, and `checkpointAfter` from model context while keeping them in tool details and the manifest.
+- [ ] 13.2 Rework the model-facing result envelope so the tool's final `content` is exactly the frame below and nothing else. Read this literally; earlier attempts added fields that do not belong.
+
+  ```
+  Spawn results (2) · boundary a4f9c2
+
+  --TASK_1_START-a4f9c2--
+  agent: fixer
+  childSessionId: 018f2c7a-1d3e-4b90-9c11-5a7e0b2d4f86
+  status: success
+  --TASK_1_RESPONSE-a4f9c2--
+  <the child's final assistant message, verbatim and unmodified>
+  --TASK_1_END-a4f9c2--
+
+  --TASK_2_START-a4f9c2--
+  agent: explorer
+  childSessionId: 0192ab44-77c1-4de2-8f03-6b1c9d5e2a10
+  status: failure
+  error: Child "0192ab44" is not reachable on this branch; no usable reference exists here.
+  --TASK_2_RESPONSE-a4f9c2--
+  --TASK_2_END-a4f9c2--
+  ```
+
+  Rules, all of which must hold:
+  - Header line once per call: `Spawn results (<taskCount>) · boundary <nonce>`.
+  - `<nonce>` is randomly generated per spawn call, appears in every boundary of that call, and is never placed in any child's prompt or context.
+  - Boundary task numbers are 1-based and follow input order. `taskIndex` in tool details stays 0-based; the envelope carries no numeric task field of its own.
+  - Always present, in this order: `agent`, `childSessionId`, `status`. `status` is exactly `success`, `failure`, or `aborted`.
+  - `error` appears only when the runtime failed to obtain a usable child response, and carries the runtime's message, never child prose.
+  - The truncation notice appears only when the body was capped (see 13.3).
+  - Everything between `--TASK_n_RESPONSE-<nonce>--` and `--TASK_n_END-<nonce>--` is the child's final message byte-for-byte, never reformatted, summarized, validated, or repaired.
+  - Forbidden anywhere in model-facing content: `interactionId`, `name`, `taskIndex`, `checkpointBefore`, `checkpointAfter`, `observedPaths`, any file path, any session-file path, and all telemetry (model identity, duration, request counts, token counts, cost). These remain available in tool details and the manifest for the user.
+
+  Verify with a snapshot test asserting the exact string for a mixed success/failure/aborted batch, and an assertion that no forbidden key appears in `content`.
+- [ ] 13.4 Stop leaking progress into model context: `onUpdate` currently publishes the full progress render into model-facing `content` while sending `details` with an empty `interactions` array. Invert it so partial updates carry live progress in `details` and a single short static receipt line in `content`, and so the settled `content` is only the 13.2 envelope; verify partial and final content snapshots contain no per-task progress text.
 - [ ] 13.3 Raise the output cap threshold to a value validated against real subagent output so it fires only on runaway output, point the truncation notice at continuing the child session rather than its session-file path, and insert an inline marker at the truncation cut point; verify the constant has one declared source instead of duplicating between `constants.ts` and `output-cap.ts`.
+
+## 14. Live Spawn Tool Rendering
+
+User-facing observability for a pending spawn call, per design decision D17. Rendering only; nothing here reaches model context.
+
+- [ ] 14.1 Replace the per-call `Container` in `renderResult` with a stateful component reused across renders through `context.lastComponent`, following `P2pAskBatchResultComponent` in `src/extensions/p2p-council/tools/p2p-ask.tool.ts`; drive repaints from an internal spinner interval that starts only while a task is unsettled, stops on settle, and calls `unref()`; verify a child running one long tool call still advances its timer and spinner without emitting events.
+- [ ] 14.2 Render the first frame from `context.args` before any child event arrives so every task row shows its agent, 1-based task number, and `new` or `resume` immediately; verify the tree appears at dispatch rather than after the first tool call.
+- [ ] 14.3 Extend `SpawnProgress` with the state the view needs: per-task `startedAt`, tool-use counter, current tool name and summarized input, terminal outcome of the last tool call from `tool_execution_end.isError`, a capped tool trail, and an explicit phase of `queued`, `waiting`, `running`, `replied`, or `failed`; observe `agent_start`, `agent_end`, `tool_execution_start`, and `tool_execution_end` only. Verify `queued` (admitted but holding no concurrency slot, no timer) is distinct from `waiting` (started, no tool call yet, timer running).
+- [ ] 14.4 Render the collapsed tree with two lines per task: `<connector> <agent> (<taskNumber>) · <new|resume> · <timer>` then `<count> tools · <symbol> <activity>`, where activity is `waiting`, a tool name plus summarized input, `replied`, or `failed`. Use a spinner while a tool call runs, `✓`/`✗` on its completion from `isError`, `↩ replied` on `agent_end`, and `✗ failed` on failure. Close with one footer line of counts. Verify start, mid-run, partially settled, and fully settled frames.
+- [ ] 14.5 Render the expanded view as the capped tool trail, the task prompt, and per-task blocks carrying child session ID, checkpoints, and telemetry followed by the child response or error; verify the fields dropped from model context in 13.2 are all still visible to the user here, and that raw envelope boundary markup never appears.
+- [ ] 14.6 Sanitize and bound every rendered line: strip ANSI from all child-derived strings with `dye.strip` before styling, pass every line through `truncateToWidth`, wrap multi-line bodies with `wrapTextWithAnsi` using explicit prefix-width math, and wrap the whole render in a fallback that degrades to plain text instead of throwing. Verify a child whose tool arguments contain escape sequences or over-width text cannot corrupt or crash the parent TUI.
+- [ ] 14.7 Bound growth: add `maxItems` to the `tasks` array in `spawn.schema.ts`, cap the persisted tool trail per task and truncate each stored tool input at store time rather than render time, and cap visible rows with an overflow indicator; verify a large batch neither fills the editor nor grows parent session details without limit.
+- [ ] 14.8 Move shared TUI primitives (spinner frames and interval, status symbols, tree connectors) into `src/libs/` so Multiverse and p2p-council share one source instead of Multiverse importing p2p-council internals; verify both tools render identical symbols. Use plain Unicode only, no Nerd Font glyphs, and confirm the active theme exposes `syntaxNumber` before using it for task numbers.
