@@ -177,7 +177,15 @@ When continuing a child, Multiverse walks active-branch tool results for the lat
 
 **Decision.** Batch abort stops running interactions, prevents queued starts, preserves completed results, disposes runtimes, and never deletes durable children. Every dispatched batch appends exactly one hidden parent manifest, completed or aborted, with child references and telemetry. Preflight rejection writes none.
 
+The manifest carries **references, not content**: batch outcome and counts, the input task list, and per task the child session ID, subagent, terminal status, branch checkpoints, error, and telemetry. It SHALL NOT embed a child's response body or any other copy of child output.
+
 **Why.** The durable child is distinct from one turn's outcome. Aborted work may have persisted useful conversation and spent tokens, both of which must remain attributable.
+
+The content restriction is a correction made after D16 landed. Copying the full interaction, body included, made every child response exist three times: in branch-scoped tool-result details, in the manifest, and uncapped in the child's own session file. Raising the cap under D16 multiplied the redundant two copies fourfold, so a single batch could write hundreds of kilobytes of duplicated prose into the parent JSONL. The body is also the copy least worth keeping — the child session holds it uncapped and is reachable from the child session ID the manifest already records.
+
+**What only the manifest holds.** Most of what a manifest was assumed to protect is already branch-independent without it: the child session index and each child's own identity entry record parent-to-child provenance, the child's session holds its prompt and its own usage, and `rebuildChildSessionIndex` can reconstruct the index from the child files alone. Three things survive nowhere else, and they are what justifies the entry: which children were dispatched by one call and in what order; tasks that failed before any child existed, such as an unreachable continuation or an unresolvable subagent; and a record of a batch that threw after dispatch, where no successful tool result was ever returned.
+
+**Consequence.** The manifest is a batch-level index, not an archive. Reading a child's output after the fact means opening that child's session by the ID the manifest records. No manifest reader ships in V1; the entry is written and validated so the record exists when a consumer, such as run history or crash recovery, is built.
 
 ### D16. Output caps are a circuit breaker, not a budget
 

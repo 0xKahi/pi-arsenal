@@ -6,8 +6,8 @@ import { getAvailableSkillNames } from './agents/skill-policy.ts';
 import { BUNDLED_SUBAGENT_PROMPTS_DIRECTORY, type BundledSubagentName } from './agents/subagent-definition.ts';
 import { resolveMegamindEligibility } from './orchestrator/megamind.ts';
 import { MEGAMIND_PROMPT_INTRO } from './orchestrator/megamind-prompt.ts';
-import { ParentAgentState } from './orchestrator/parent-agent.ts';
-import type { SpawnOrchestratorDependencies } from './orchestrator/spawn-orchestrator.ts';
+import { type ParentAgent, ParentAgentState } from './orchestrator/parent-agent.ts';
+import type { runSpawn, SpawnOrchestratorDependencies } from './orchestrator/spawn-orchestrator.ts';
 import { latestChildInteraction } from './results/child-interaction-lookup.ts';
 import { ChildAdmissionRegistry } from './runtime/child-admission.ts';
 import { ChildSessionRepository } from './runtime/child-session-repository.ts';
@@ -21,11 +21,14 @@ export interface MultiverseDependencies {
   availableSkills?: () => Iterable<string>;
   megamindPromptIntro?: () => string;
   repository?: ChildSessionRepository;
+  spawnRun?: typeof runSpawn;
 }
 
 export interface MultiverseActivation {
   roleState: SessionRoleState;
   parentAgentState: ParentAgentState;
+  /** Persona switch for parent sessions. The command and shortcut that call it are added last. */
+  selectParentAgent: (agent: ParentAgent, ctx: ExtensionContext) => { ok: true } | { ok: false; error: string };
 }
 
 export function registerMultiverse(pi: ExtensionAPI, dependencies: MultiverseDependencies): MultiverseActivation {
@@ -77,6 +80,11 @@ export function registerMultiverse(pi: ExtensionAPI, dependencies: MultiverseDep
         const eligibility = resolveMegamind();
         return eligibility.eligible ? [...eligibility.roster.keys()] : [];
       },
+      // `ctx` only exposes a read-only session manager, so the manifest is persisted through
+      // the extension API in closure. Custom entries stay out of LLM context, and no renderer
+      // is registered, so the manifest stays invisible to the user's transcript too.
+      appendManifest: (customType, manifest) => pi.appendEntry(customType, manifest),
+      run: dependencies.spawnRun,
     }),
   );
 
@@ -97,6 +105,30 @@ export function registerMultiverse(pi: ExtensionAPI, dependencies: MultiverseDep
     pi.setActiveTools(parentAgentState.getActive() === 'megamind' && resolveMegamind().eligible ? [...active, SPAWN_TOOL_NAME] : active);
   };
 
+  /**
+   * Switch the parent persona. Child sessions are not parents and never become one:
+   * a child's identity, prompt, and tools come from its subagent definition alone, so a
+   * switch there is refused before anything is persisted and no parent-agent entry is
+   * ever written into a child session.
+   */
+  const selectParentAgent = (agent: ParentAgent, ctx: ExtensionContext): { ok: true } | { ok: false; error: string } => {
+    const role = roleState.get();
+    if (role.kind !== 'parent') return { ok: false, error: 'Parent agents cannot be switched inside a subagent session.' };
+
+    parentAgentState.select(agent, (customType, data) => pi.appendEntry(customType, data));
+    if (agent === 'default') {
+      parentAgentState.setActive('default');
+      applyParentTools();
+      return { ok: true };
+    }
+
+    const eligibility = resolveMegamind();
+    parentAgentState.setActive(eligibility.eligible ? 'megamind' : 'default');
+    if (!eligibility.eligible) ctx.ui.notify(`pi-arsenal: Megamind unavailable; using Default. ${eligibility.reason}`, 'warning');
+    applyParentTools();
+    return { ok: true };
+  };
+
   pi.on('session_start', (_event, ctx) => {
     const entries = ctx.sessionManager.getEntries();
     const role = roleState.classify(entries);
@@ -106,6 +138,7 @@ export function registerMultiverse(pi: ExtensionAPI, dependencies: MultiverseDep
       return;
     }
     if (role.kind === 'child') {
+      // Parent-agent entries carry no meaning in a child session and are never restored here.
       applyChildTools(role.identity.agent, ctx);
       return;
     }
@@ -151,5 +184,5 @@ export function registerMultiverse(pi: ExtensionAPI, dependencies: MultiverseDep
     return { systemPrompt: `${event.systemPrompt}\n\n${eligibility.prompt}` };
   });
 
-  return { roleState, parentAgentState };
+  return { roleState, parentAgentState, selectParentAgent };
 }

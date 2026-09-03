@@ -17,7 +17,7 @@ Multiverse adds durable subordinate sessions: a parent can create several specia
 - Add a `megamind` parent persona whose dynamic orchestration prompt is appended to the host prompt. Parent sessions record append-only `arsenal-parent-agent` entries when switching between `default` and `megamind`; the last recorded selection is restored. Parent-agent switching is unavailable inside child sessions.
 - Bound each batch with one batch-wide `maxConcurrency` pool (default `5`, maximum `10`) and all-settled failure semantics.
 - Compute a structured result frame around each child's verbatim final response, carrying only fields the parent model can act on and did not itself supply: subagent name, child session ID, status, error, and a truncation notice pointing at the child session for more detail. Branch checkpoints and telemetry remain in presentation details and the durable manifest rather than model context; file-touch data is not collected at all.
-- Append one invisible manifest for every dispatched batch, including aborted batches.
+- Append one invisible manifest for every dispatched batch, including aborted batches, carrying child references rather than a duplicate copy of child output.
 
 V1 deliberately does not provide background dispatch, mid-interaction steering, persistent resident child processes, automatic tmux attachment, worktree isolation, enforced write scopes, cross-process writer leases, a second `tool_call` capability gate, snapshot-pinned prompts, or a child-session history modal. Because all user extensions continue loading and no special council activation guard is added in V1, a child may connect to an enabled council even when its active tool set excludes council tools.
 

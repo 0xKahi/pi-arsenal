@@ -127,7 +127,7 @@ Captured child output SHALL be bounded by a threshold sized to stop runaway outp
 - **THEN** its body is returned whole and no truncation notice appears
 
 ### Requirement: Invisible run manifest
-Every batch that dispatched work SHALL append exactly one non-rendered parent custom entry describing its outcome, task interactions, child session IDs and checkpoints, model, duration, and usage. Rejected pre-dispatch calls SHALL append none.
+Every batch that dispatched work SHALL append exactly one non-rendered parent custom entry describing its outcome, its input task list, and per task the child session ID, subagent, terminal status, checkpoints, error, model, duration, and usage. The entry SHALL carry references rather than content, and SHALL NOT embed a child's response body or any other copy of child output; a child's output SHALL remain reachable by opening the recorded child session. Rejected pre-dispatch calls SHALL append none.
 
 #### Scenario: Completed manifest
 - **WHEN** a dispatched batch completes
@@ -136,3 +136,11 @@ Every batch that dispatched work SHALL append exactly one non-rendered parent cu
 #### Scenario: Aborted manifest
 - **WHEN** a dispatched batch is aborted
 - **THEN** one aborted manifest retains the work and expenditure recorded so far
+
+#### Scenario: Manifest carries no child output
+- **WHEN** a batch whose children produced large responses is recorded
+- **THEN** the stored entry holds each child's session ID and terminal state but no response body, so the parent session does not accumulate a duplicate copy of child output
+
+#### Scenario: Task that never reached a child
+- **WHEN** a dispatched task fails before a child session exists, such as an unreachable continuation target
+- **THEN** the manifest still records that task, its input, and its failure, since no child session exists to hold them

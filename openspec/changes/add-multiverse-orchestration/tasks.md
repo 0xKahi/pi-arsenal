@@ -33,7 +33,7 @@
 - [x] 5.2 Fall back at runtime to Default without rewriting the saved preference when Megamind is ineligible because Multiverse is disabled or no subagent is available; verify the user is notified and the preference returns when eligibility is restored.
 - [x] 5.3 Build the Megamind prompt dynamically from only enabled, successfully loaded subagents and append it once to the parent host prompt through `before_agent_start`; verify host/extension content survives, disabled agents are absent, and turns do not accumulate copies.
 - [x] 5.4 Toggle the spawn tool and Megamind prompt together from the next turn when parent selection changes; verify the running turn remains on its starting persona and Default has neither contribution.
-- [ ] 5.5 Reject parent-agent switching in child sessions and ignore any parent-agent entries found there; verify child prompt, tools, and identity remain unchanged after attempted switches.
+- [x] 5.5 Reject parent-agent switching in child sessions and ignore any parent-agent entries found there; verify child prompt, tools, and identity remain unchanged after attempted switches.
 - [ ] 5.6 Replace the empty Megamind development placeholder last with a non-empty maintainer-approved prompt; until approval, keep Megamind ineligible while testing dynamic roster assembly with fixture content rather than inventing a production prompt.
 
 ## 6. Model and Child Runtime Construction
@@ -69,9 +69,9 @@
 
 ## 10. Durable Batch Manifest
 
-- [x] 10.1 Define a versioned hidden manifest containing batch outcome, input order, per-task child references/checkpoints, terminal states, observed paths, model, duration, requests, usage, and errors; verify the shape can reconstruct completed and aborted runs. Superseded by §13 (D14): the manifest drops `observedPaths` entirely rather than persisting it.
+- [x] 10.1 Define a versioned hidden manifest containing batch outcome, input order, per-task child references/checkpoints, terminal states, observed paths, model, duration, requests, usage, and errors; verify the shape can reconstruct completed and aborted runs. Superseded by §13: the manifest drops `observedPaths` entirely rather than persisting it (D14), and carries references rather than embedded child output (D15, task 13.5).
 - [x] 10.2 Write exactly one manifest per spawn call on every post-dispatch terminal path and none on preflight rejection; verify completion, abort, partial creation failure, and manifest-write error handling do not double-write.
-- [ ] 10.3 Leave the manifest outside model context and normal display by using an unrendered custom entry while keeping it discoverable through stored session entries; verify subsequent model context omits it and a parser can recover it. BLOCKED: `ExtensionContext.sessionManager` is a `ReadonlySessionManager`, so a tool cannot append a custom entry. The manifest currently rides in tool-result details; the durable-entry writer and recovery parser exist behind the optional `appendManifest` sink.
+- [x] 10.3 Leave the manifest outside model context and normal display by using an unrendered custom entry while keeping it discoverable through stored session entries; verify subsequent model context omits it and a parser can recover it.
 
 ## 11. TUI Presentation
 
@@ -125,6 +125,7 @@ Supersedes the field sets built in 9.1, 9.3, 9.4, 9.5, 10.1, and 11.2, per desig
 
   Verify with a snapshot test asserting the exact string for a mixed success/failure/aborted batch, and an assertion that no forbidden key appears in `content`.
 - [x] 13.4 Stop leaking progress into model context: `onUpdate` currently publishes the full progress render into model-facing `content` while sending `details` with an empty `interactions` array. Invert it so partial updates carry live progress in `details` and a single short static receipt line in `content`, and so the settled `content` is only the 13.2 envelope; verify partial and final content snapshots contain no per-task progress text.
+- [ ] 13.5 Trim the manifest to references so it stops duplicating child output: replace the embedded `ChildInteraction` in `SpawnManifestTask` with the task input plus child session ID, agent, terminal status, checkpoints, error, and telemetry, dropping `body` and the truncation record; keep tool-result `details.interactions` unchanged, since continuation resolves from there. Verify a batch of large child responses adds no copy of any response body to the parent session entry, that a task which failed before a child existed is still recorded with its input and error, and that `recoverSpawnManifests` round-trips the trimmed shape. Sized with §14 because both bound persisted growth.
 - [x] 13.3 Raise the output cap threshold to a value validated against real subagent output so it fires only on runaway output, point the truncation notice at continuing the child session rather than its session-file path, and insert an inline marker at the truncation cut point; verify the constant has one declared source instead of duplicating between `constants.ts` and `output-cap.ts`.
 
 ## 14. Live Spawn Tool Rendering

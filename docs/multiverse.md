@@ -70,6 +70,8 @@ Every task produces one `ChildInteraction` in the tool-result details: interacti
 
 Model-facing content deliberately excludes interaction IDs, task names and indices, checkpoints, file and session-file paths, model name, duration, request counts, tokens, and cost; those live in details, the manifest, and the expanded TUI view only. While a call is pending, partial updates carry only a fixed receipt line in model-facing content and keep live progress in details.
 
+Every dispatched batch also appends exactly one `arsenal-spawn-manifest` custom entry to the parent session (none when the call is rejected before dispatch). Custom entries never enter model context, and no renderer is registered for this type, so it stays invisible in the transcript while remaining recoverable from the session JSONL via `recoverSpawnManifests`.
+
 Multiverse reports no account of which files a child changed. All bundled subagents have `bash`, so any tool-argument ledger would silently miss shell-mediated writes and its empty result would be unsound. To see what a child did, read the child's own session file (which records every tool call) or inspect the working tree with `git status` / `git diff`.
 
 ## V1 limitations
@@ -79,6 +81,6 @@ Multiverse reports no account of which files a child changed. All bundled subage
 - No second `tool_call` guard: an enabled council may still connect even if its tools are inactive.
 - No file-touch reporting at all: use the child's session file or the working tree.
 - Parent crashes may leave an interaction without a reference; it is preserved but not imported.
-- The SDK exposes only a read-only session manager to tools, so the spawn manifest is carried in tool-result details rather than a separate hidden custom entry. `spawn-manifest-writer.ts` and `spawn-manifest-recovery.ts` implement the durable-entry form and are wired through the optional `appendManifest` sink for when a writable surface exists.
+- The parent persona switch is exposed as `selectParentAgent` on the activation; the user-facing command and shortcut that call it are added last.
 
 The Megamind parent prompt is assembled at runtime in `src/extensions/multiverse/orchestrator/megamind-prompt.ts` from a maintainer-approved introduction plus the currently enabled roster; it stays ineligible while the introduction is empty.

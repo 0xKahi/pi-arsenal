@@ -32,7 +32,7 @@ those documents cannot: **what order to do things in, why, and what will bite yo
 ```
   1  Result contract        13.1 -> 13.2 -> 13.4 -> 13.3      foundation
   2  Deferred wiring        5.5, 10.3                          small + independent
-  3  Live tool rendering    14.1 .. 14.8                       depends on batch 1
+  3  Live tool rendering    14.1 .. 14.8, 13.5                 depends on batch 1
   4  Prompt + end-to-end    5.6 -> 12.3                        last, by owner's choice
 ```
 
@@ -140,13 +140,24 @@ and that it is absent from model context.
 
 # 3. Live tool rendering
 
-**Tasks:** `14.1` … `14.8`. Suggested order `14.1 → 14.3 → 14.2 → 14.4 → 14.5 → 14.6 → 14.7 → 14.8`.
+**Tasks:** `14.1` … `14.8`, plus `13.5`. Suggested order `14.1 → 14.3 → 14.2 → 14.4 → 14.5 → 14.6 → 14.7 → 13.5 → 14.8`.
+
+`13.5` rides here rather than with batch 1 because it is the same problem as `14.7`: both bound what a spawn call persists. Do them together so persisted growth is decided once. `13.5` trims the manifest to references — `14.7` caps the tool trail and stored tool inputs — and the two touch `spawn-manifest.ts` and the details shape from opposite ends.
 
 **Goal:** while a spawn call is pending, the user can see what each subagent is doing.
 Rendering only. Nothing here reaches model context.
 
-**Depends on batch 1**, specifically `13.4` — the live view reads `details`, which is
-empty during partial updates until that inversion lands.
+**Batch 1 landed, so the shape you render already exists.** `13.4` inverted the update
+path: partial `content` is now the fixed string `PARTIAL_RECEIPT` in `spawn.tool.ts`, and
+`details` carries `progress: TaskProgress[]` from `SpawnProgress.snapshot()`. Two
+consequences:
+
+- `renderResult` currently maps `details.progress` into `TaskPresentation` when
+  `interactions` is empty. That is a deliberate stopgap so the pending view was not blank
+  between batches. **Your component replaces it** — do not preserve it.
+- `SpawnToolDetails.progress` is part of the persisted details shape, so everything `14.3`
+  adds to `TaskProgress` is written to the parent session. That is exactly what `14.7`
+  and `13.5` bound; decide the cap before you add fields, not after.
 
 ### Reuse target
 
@@ -162,8 +173,9 @@ empty during partial updates until that inversion lands.
   explicit prefix-width maths for wrapped bodies.
 - `dye.strip(...)` on all externally-authored text before styling.
 - Theme keys in use: `toolTitle`, `dim`, `text`, `muted`, `accent`, `success`, `error`.
-  Task numbers additionally want `syntaxNumber` — confirm the runtime theme exposes it
-  before designing around it.
+  `syntaxNumber` is confirmed present on `ThemeColor`
+  (`pi-coding-agent/dist/modes/interactive/theme/theme.d.ts`), so `14.8`'s open question
+  is settled: it is safe to use for task numbers.
 
 ### Consulted prior art
 
@@ -252,12 +264,12 @@ exists until this prompt does.
 ## Current state
 
 ```
-  52 / 64 tasks complete, 12 open
+  54 / 65 tasks complete, 11 open
   openspec validate --changes add-multiverse-orchestration   passing
 
   batch 1   done
-  batch 2   5.5 10.3
-  batch 3   14.1 .. 14.8
+  batch 2   done
+  batch 3   14.1 .. 14.8, 13.5
   batch 4   5.6 12.3
 ```
 
@@ -267,5 +279,11 @@ Everything under `src/extensions/multiverse/`, `test/extensions/multiverse/`,
 `src/config/config-loader.ts`, `src/schemas/config.schema.ts`,
 `assets/config.schema.json`, and three existing test files.
 
-`docs/multiverse.md` documents user-facing behaviour and will need updating once batches 1
-and 3 change what users and models actually see.
+`docs/multiverse.md` was updated for batches 1 and 2 (envelope frame, no file-touch
+reporting, manifest entry, partial-update receipt). Batch 3 changes what the pending and
+expanded views look like, so it needs a third pass.
+
+Testing seams added in batch 2, useful for batch 3: `MultiverseDependencies.spawnRun`
+injects a fake orchestrator so a test can drive the tool without dispatching a real child,
+and `test/extensions/multiverse/multiverse-wiring.test.ts` has a working fake `pi`
+(`registerTool`, `appendEntry`, `setActiveTools`) to copy.
