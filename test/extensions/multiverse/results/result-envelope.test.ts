@@ -77,7 +77,11 @@ describe('buildResultEnvelope', () => {
 
     expect(envelope.content).toContain('truncated: output exceeded the size cap; continue this child session for the remainder or a summary');
     expect(envelope.content).not.toContain('.jsonl');
-    expect(envelope.content).not.toContain('99');
+    // Sizes are user-only. Checked on the truncation line itself: the header's random nonce
+    // is hex and can legitimately contain any digit pair.
+    const truncationLine = envelope.content.split('\n').find(line => line.startsWith('truncated:')) ?? '';
+    expect(truncationLine).not.toContain('99');
+    expect(truncationLine).not.toContain('9 lines');
   });
 
   it('uses a fresh nonce per call so child markup can never forge a boundary', () => {

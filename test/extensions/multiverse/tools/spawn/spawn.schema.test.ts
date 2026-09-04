@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   buildChildPrompt,
   describeTask,
+  MAX_SPAWN_TASKS,
   spawnParameters,
   validateSpawnInput,
 } from '../../../../../src/extensions/multiverse/tools/spawn/spawn.schema.ts';
@@ -24,6 +25,14 @@ describe('spawn input validation', () => {
     expect(parsed.tasks.map(task => task.action)).toEqual(['create', 'continue']);
     expect(parsed.tasks[1]).toMatchObject({ action: 'continue', childSessionId: 'child-1' });
     expect(spawnParameters.type).toBe('object');
+  });
+
+  it('bounds the batch size in both the published schema and preflight validation', () => {
+    const tasks = Array.from({ length: MAX_SPAWN_TASKS + 1 }, () => ({ action: 'create', agent: 'fixer', task: 'x' }));
+
+    expect((spawnParameters.properties.tasks as { maxItems?: number }).maxItems).toBe(MAX_SPAWN_TASKS);
+    expect(() => validateSpawnInput({ context: 'shared', tasks }, options)).toThrow(`at most ${MAX_SPAWN_TASKS}`);
+    expect(() => validateSpawnInput({ context: 'shared', tasks: tasks.slice(0, MAX_SPAWN_TASKS) }, options)).not.toThrow();
   });
 
   it.each([

@@ -232,15 +232,15 @@ describe('runSpawn', () => {
           snapshots.push(
             progress
               .snapshot()
-              .map(task => `${task.label}:${task.status}`)
+              .map(task => `${task.label}:${task.phase}`)
               .join(','),
           ),
       },
     );
 
-    expect(snapshots[0]).toBe('labelled:pending');
-    expect(snapshots).toContain('labelled:running');
-    expect(snapshots.at(-1)).toBe('labelled:success');
+    expect(snapshots[0]).toBe('labelled:queued');
+    expect(snapshots).toContain('labelled:waiting');
+    expect(snapshots.at(-1)).toBe('labelled:replied');
   });
 
   it('allows only one managed writer per child within a call', async () => {

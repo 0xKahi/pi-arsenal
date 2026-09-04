@@ -1,6 +1,14 @@
 import { Type } from 'typebox';
 import { BUNDLED_SUBAGENT_NAMES, type BundledSubagentName } from '../../agents/subagent-definition.ts';
 
+/**
+ * Upper bound on tasks in one call.
+ *
+ * Bounds both the rendered height of the tool row and the details written to the parent
+ * session; tasks beyond the concurrency pool only queue anyway.
+ */
+export const MAX_SPAWN_TASKS = 20;
+
 const optionalName = { name: Type.Optional(Type.String({ minLength: 1, description: 'Short label shown in the parent UI for this task.' })) };
 
 const createTask = Type.Object(
@@ -29,7 +37,11 @@ const continueTask = Type.Object(
 export const spawnParameters = Type.Object(
   {
     context: Type.String({ minLength: 1, description: 'Shared context passed to every task in this call.' }),
-    tasks: Type.Array(Type.Union([createTask, continueTask]), { minItems: 1, description: 'Ordered tasks executed as one blocking batch.' }),
+    tasks: Type.Array(Type.Union([createTask, continueTask]), {
+      minItems: 1,
+      maxItems: MAX_SPAWN_TASKS,
+      description: `Ordered tasks executed as one blocking batch (at most ${MAX_SPAWN_TASKS}).`,
+    }),
   },
   { additionalProperties: false },
 );
@@ -54,6 +66,10 @@ export function validateSpawnInput(input: unknown, options: SpawnValidationOptio
   if (typeof input.context !== 'string' || !input.context.trim()) failures.push('Shared context must be non-empty.');
   if (!Array.isArray(input.tasks) || input.tasks.length === 0) {
     failures.push('Task array must be non-empty.');
+    throw validationError(failures);
+  }
+  if (input.tasks.length > MAX_SPAWN_TASKS) {
+    failures.push(`Task array holds ${input.tasks.length} tasks; at most ${MAX_SPAWN_TASKS} are allowed in one call.`);
     throw validationError(failures);
   }
 

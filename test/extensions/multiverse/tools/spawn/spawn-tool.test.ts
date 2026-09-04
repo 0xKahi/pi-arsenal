@@ -87,7 +87,7 @@ describe('createSpawnTool', () => {
     const tool = createSpawnTool(
       host({
         run: async (_input, _dependencies, options) => {
-          const progress = new SpawnProgress([{ label: 'implement', agent: 'fixer' }]);
+          const progress = new SpawnProgress([{ label: 'implement', agent: 'fixer', action: 'create' }]);
           progress.start(0);
           options?.onProgress?.(progress);
           return { interactions: [childInteraction({ body: 'secret child output' })], progress, aborted: false };
@@ -113,7 +113,8 @@ describe('createSpawnTool', () => {
     expect(updates.join('\n')).not.toContain('fixer');
     expect(updates.join('\n')).not.toContain('secret child output');
 
-    const details = detailUpdates.at(-1) as { progress?: Array<{ index: number; label: string; agent: string; status: string }> };
-    expect(details.progress).toEqual([{ index: 0, label: 'implement', agent: 'fixer', status: 'running' }]);
+    const details = detailUpdates.at(-1) as { progress?: Array<{ index: number; label: string; agent: string; phase: string }> };
+    expect(details.progress).toHaveLength(1);
+    expect(details.progress?.[0]).toMatchObject({ index: 0, label: 'implement', agent: 'fixer', action: 'create', phase: 'waiting' });
   });
 });

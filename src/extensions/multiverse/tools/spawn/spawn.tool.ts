@@ -6,10 +6,10 @@ import type { SpawnOrchestratorDependencies, SpawnRunResult } from '../../orches
 import { runSpawn } from '../../orchestrator/spawn-orchestrator.ts';
 import { isSpawnToolDetails, type SpawnToolDetails } from '../../results/child-interaction.types.ts';
 import { buildResultEnvelope } from '../../results/result-envelope.ts';
-import { renderSpawnPresentation, type TaskPresentation } from './spawn.presenter.ts';
 import { describeTask, type SpawnInput, spawnParameters, validateSpawnInput } from './spawn.schema.ts';
-import { SPAWN_MANIFEST_VERSION, type SpawnManifest, summarizeTelemetry } from './spawn-manifest.ts';
+import { SPAWN_MANIFEST_VERSION, type SpawnManifest, summarizeTelemetry, toManifestTask } from './spawn-manifest.ts';
 import { type ManifestSink, SpawnManifestWriter } from './spawn-manifest-writer.ts';
+import { buildSpawnRows, SpawnResultComponent } from './spawn-result.component.ts';
 
 export { SPAWN_TOOL_NAME };
 
@@ -70,7 +70,13 @@ export function createSpawnTool(host: SpawnToolHost): ToolDefinition<typeof spaw
         throw error;
       }
 
-      const details: SpawnToolDetails = { version: CHILD_INTERACTION_VERSION, kind: 'spawn', interactions: run.interactions };
+      // The capped progress trail is persisted so the settled row can still be expanded.
+      const details: SpawnToolDetails = {
+        version: CHILD_INTERACTION_VERSION,
+        kind: 'spawn',
+        interactions: run.interactions,
+        progress: run.progress.snapshot(),
+      };
       writeManifest(host, writer, buildManifest(input, run.interactions, run.aborted ? 'aborted' : 'completed', Date.now() - startedAt));
 
       return {
@@ -81,40 +87,15 @@ export function createSpawnTool(host: SpawnToolHost): ToolDefinition<typeof spaw
     renderCall() {
       return new Container();
     },
-    renderResult(result, { expanded }) {
+    renderResult(result, { expanded }, theme, context) {
       const details = isSpawnToolDetails(result.details) ? result.details : undefined;
-      // While the call is pending only live progress exists; settled results supersede it.
-      const tasks: TaskPresentation[] =
-        details && details.interactions.length === 0 && details.progress
-          ? toPresentation(details.progress)
-          : (details?.interactions ?? []).map(interaction => ({
-              status: interaction.status,
-              label: interaction.name ?? `task ${interaction.taskIndex + 1}`,
-              agent: interaction.agent,
-              error: interaction.error,
-              interaction,
-            }));
-      const container = new Container();
-      container.addChild({
-        render: (width: number) =>
-          renderSpawnPresentation({ tasks, expanded })
-            .split('\n')
-            .map(line => line.slice(0, Math.max(1, width))),
-        invalidate: () => {},
-      });
-      return container;
+      // Reuse the live component across renders so spinner and timer state survive.
+      const prior = context?.lastComponent;
+      const component = prior instanceof SpawnResultComponent ? prior : new SpawnResultComponent(theme, context?.invalidate ?? (() => {}));
+      component.update(buildSpawnRows({ args: context?.args, details }), expanded);
+      return component;
     },
   };
-}
-
-function toPresentation(snapshot: readonly import('./spawn-progress.ts').TaskProgress[]): TaskPresentation[] {
-  return snapshot.map(task => ({
-    status: task.status,
-    label: task.label,
-    agent: task.agent,
-    currentTool: task.currentTool,
-    error: task.error,
-  }));
 }
 
 function buildManifest(
@@ -127,11 +108,8 @@ function buildManifest(
     version: SPAWN_MANIFEST_VERSION,
     outcome,
     context: input.context,
-    tasks: input.tasks.map((task, index) => ({
-      input: task,
-      interaction: interactions[index],
-      error: interactions[index]?.error,
-    })),
+    // References only: a child's response body lives in that child's own session (D15).
+    tasks: input.tasks.map((task, index) => toManifestTask(task, interactions[index])),
     telemetry: summarizeTelemetry(interactions, durationMs, interactions[0]?.telemetry.model),
     counts: {
       total: input.tasks.length,

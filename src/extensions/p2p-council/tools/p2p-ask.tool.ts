@@ -10,11 +10,10 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import { type Component, Container, truncateToWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
 import { Type } from 'typebox';
+import { SPINNER_FRAMES, SPINNER_INTERVAL_MS, STATUS_SYMBOLS, treeConnector, treeContinuation } from '../../../libs/tui-glyphs.ts';
 import { memberNames, type P2pStateSource, resolveState, textResult } from './tool-helpers';
 
 export const P2pAskToolName = 'p2p_ask';
-export const P2P_ASK_SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const;
-export const P2P_ASK_SPINNER_INTERVAL_MS = 80;
 
 export interface P2pAskRequest {
   to: string;
@@ -176,9 +175,9 @@ export class P2pAskBatchResultComponent implements Component {
     const hasPending = details?.kind === 'batch' && details.entries.some(entry => entry.state === 'pending');
     if (hasPending && !this.timer) {
       this.timer = setInterval(() => {
-        this.frame = (this.frame + 1) % P2P_ASK_SPINNER_FRAMES.length;
+        this.frame = (this.frame + 1) % SPINNER_FRAMES.length;
         this.requestRender();
-      }, P2P_ASK_SPINNER_INTERVAL_MS);
+      }, SPINNER_INTERVAL_MS);
       this.timer.unref?.();
     } else if (!hasPending) {
       this.stopTimer();
@@ -189,7 +188,9 @@ export class P2pAskBatchResultComponent implements Component {
     const safeWidth = Math.max(1, width);
     const lines: string[] = [truncateToWidth(this.theme.fg('toolTitle', this.theme.bold('p2p_ask')), safeWidth, '')];
     if (this.details?.kind === 'validation') {
-      lines.push(...wrapStyled(this.theme.fg('error', `✗ Duplicate targets: ${this.details.duplicateTargets.join(', ')}`), safeWidth));
+      lines.push(
+        ...wrapStyled(this.theme.fg('error', `${STATUS_SYMBOLS.failure} Duplicate targets: ${this.details.duplicateTargets.join(', ')}`), safeWidth),
+      );
       return lines;
     }
 
@@ -197,8 +198,9 @@ export class P2pAskBatchResultComponent implements Component {
       this.details?.kind === 'batch' ? this.details.entries : this.requests.map(request => ({ to: request.to, state: 'pending' as const }));
     entries.forEach((entry, index) => {
       const last = index === entries.length - 1;
-      const connector = last ? '└─ ' : '├─ ';
-      const symbol = entry.state === 'pending' ? P2P_ASK_SPINNER_FRAMES[this.frame] : entry.state === 'success' ? '✓' : '✗';
+      const connector = treeConnector(last);
+      const symbol =
+        entry.state === 'pending' ? SPINNER_FRAMES[this.frame] : entry.state === 'success' ? STATUS_SYMBOLS.success : STATUS_SYMBOLS.failure;
       const symbolColor = entry.state === 'pending' ? 'accent' : entry.state === 'success' ? 'success' : 'error';
       lines.push(
         truncateToWidth(
@@ -209,7 +211,7 @@ export class P2pAskBatchResultComponent implements Component {
       );
       if (this.expanded) {
         const prompt = this.requests[index]?.prompt ?? '';
-        const continuation = last ? '   ' : '│  ';
+        const continuation = treeContinuation(last);
         const promptPrefix = `${continuation}  `;
         const promptWidth = Math.max(1, safeWidth - promptPrefix.length);
         for (const promptLine of wrapTextWithAnsi(this.theme.fg('dim', dye.strip(prompt)), promptWidth)) {
@@ -223,13 +225,15 @@ export class P2pAskBatchResultComponent implements Component {
     if (counts.success > 0 || (counts.failure === 0 && counts.pending === 0)) countParts.push(plural(counts.success, 'reply', 'replies'));
     if (counts.failure > 0) countParts.push(plural(counts.failure, 'failure', 'failures'));
     if (counts.pending > 0) countParts.push(plural(counts.pending, 'pending request', 'pending requests'));
-    lines.push(truncateToWidth(this.theme.fg('success', '↩ ') + this.theme.fg('muted', countParts.join(' · ')), safeWidth, ''));
+    lines.push(
+      truncateToWidth(this.theme.fg('success', `${STATUS_SYMBOLS.replied} `) + this.theme.fg('muted', countParts.join(' · ')), safeWidth, ''),
+    );
 
     if (this.expanded) {
       for (const entry of entries) {
         if (entry.state === 'pending') continue;
         const success = entry.state === 'success';
-        const symbol = this.theme.fg(success ? 'success' : 'error', success ? '✓' : '✗');
+        const symbol = this.theme.fg(success ? 'success' : 'error', success ? STATUS_SYMBOLS.success : STATUS_SYMBOLS.failure);
         lines.push(truncateToWidth(`${symbol} ${this.theme.fg('text', entry.to)}`, safeWidth, ''));
         const body = success ? entry.reply : entry.message;
         const bodyWidth = Math.max(1, safeWidth - 2);

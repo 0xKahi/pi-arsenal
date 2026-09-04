@@ -264,12 +264,12 @@ exists until this prompt does.
 ## Current state
 
 ```
-  54 / 65 tasks complete, 11 open
+  63 / 65 tasks complete, 2 open
   openspec validate --changes add-multiverse-orchestration   passing
 
   batch 1   done
   batch 2   done
-  batch 3   14.1 .. 14.8, 13.5
+  batch 3   done
   batch 4   5.6 12.3
 ```
 
@@ -280,8 +280,16 @@ Everything under `src/extensions/multiverse/`, `test/extensions/multiverse/`,
 `assets/config.schema.json`, and three existing test files.
 
 `docs/multiverse.md` was updated for batches 1 and 2 (envelope frame, no file-touch
-reporting, manifest entry, partial-update receipt). Batch 3 changes what the pending and
-expanded views look like, so it needs a third pass.
+reporting, manifest entry, partial-update receipt) and again for batch 3 (live tool row,
+queued vs waiting, expanded view, sanitization, reference-only manifest, 20-task cap).
+
+Batch 3 landed as: `src/libs/tui-glyphs.ts` (shared spinner/symbols/connectors, now also
+used by p2p-ask), a rewritten `spawn-progress.ts` (phases, timers, tool trail, store-time
+caps), a new `spawn-result.component.ts` (`SpawnResultComponent` + `buildSpawnRows`), and
+the deletion of `spawn.presenter.ts`. `SpawnManifestTask` is now references only via
+`toManifestTask`, and settled tool details carry `progress` so the trail survives for
+expansion. Batch 4 note: `spawn.schema.ts` exports `MAX_SPAWN_TASKS` (20), which the
+Megamind prompt should respect when it teaches batching.
 
 Testing seams added in batch 2, useful for batch 3: `MultiverseDependencies.spawnRun`
 injects a fake orchestrator so a test can drive the tool without dispatching a real child,

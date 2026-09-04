@@ -51,7 +51,12 @@ export async function runSpawn(
 ): Promise<SpawnRunResult> {
   const hydrate = dependencies.hydrate ?? hydrateChildInteraction;
   const progress = new SpawnProgress(
-    input.tasks.map((task, index) => ({ label: describeTask(task, index), agent: task.action === 'create' ? task.agent : 'continue' })),
+    input.tasks.map((task, index) => ({
+      label: describeTask(task, index),
+      // A continuation's subagent is unknown until its target resolves.
+      agent: task.action === 'create' ? task.agent : undefined,
+      action: task.action,
+    })),
   );
   const publish = () => options.onProgress?.(progress);
   publish();
@@ -97,6 +102,7 @@ async function runTask(context: RunTaskInput): Promise<ChildInteraction> {
   const { task, index, dependencies } = context;
   const agent = task.action === 'create' ? task.agent : (dependencies.resolveContinuation(task.childSessionId)?.agent ?? undefined);
   if (!agent) return placeholderInteraction(task, index, 'failure', unreachableChild((task as { childSessionId: string }).childSessionId));
+  context.progress.resolveAgent(index, agent);
 
   const resolved = dependencies.resolveSubagent(agent);
   if (!resolved.success) return placeholderInteraction(task, index, 'failure', resolved.error, agent);

@@ -80,7 +80,9 @@ describe('spawn manifest persistence', () => {
     const manifests = recoverSpawnManifests(runtime.entries as never);
     expect(manifests).toHaveLength(1);
     expect(manifests[0]?.outcome).toBe('completed');
-    expect(manifests[0]?.tasks[0]?.interaction?.childSessionId).toBe('child-1');
+    expect(manifests[0]?.tasks[0]?.childSessionId).toBe('child-1');
+    // The manifest indexes children by reference; response bodies stay in the child session.
+    expect(JSON.stringify(manifests[0])).not.toContain('body');
     expect(runtime.entries.filter(entry => entry.type === 'custom' && entry.customType === 'arsenal-spawn-manifest')).toHaveLength(1);
     // Custom entries stay out of LLM context, and no renderer is registered for them.
     expect(runtime.renderers).toEqual([]);
