@@ -31,6 +31,6 @@ export function resolveMegamindEligibility(environment: MegamindEnvironment): Me
   return {
     eligible: true,
     roster,
-    prompt: buildMegamindPrompt({ intro: environment.promptIntro, roster }),
+    prompt: buildMegamindPrompt({ intro: environment.promptIntro, roster, maxConcurrency: environment.config.maxConcurrency }),
   };
 }

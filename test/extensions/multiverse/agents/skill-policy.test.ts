@@ -14,6 +14,7 @@ describe('Multiverse skill policy', () => {
       name: 'explorer',
       tools: ['read'],
       skills: ['pdf'],
+      metadata: ['Lane: test lane'],
       prompt: 'child prompt',
       filePath: '/tmp/explorer.md',
     });

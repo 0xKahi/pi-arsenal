@@ -99,9 +99,9 @@ describe('parent persona eligibility', () => {
     const first = runtime.beforeAgentStart('HOST\nPROJECT APPEND');
     expect(first?.systemPrompt).toStartWith('HOST\nPROJECT APPEND');
     expect(first?.systemPrompt).toContain('fixture intro');
-    expect(first?.systemPrompt).toContain('### explorer');
-    expect(first?.systemPrompt).toContain('### fixer');
-    expect(first?.systemPrompt).toContain('### visualizer');
+    expect(first?.systemPrompt).toContain('@explorer');
+    expect(first?.systemPrompt).toContain('@fixer');
+    expect(first?.systemPrompt).toContain('@visualizer');
     expect(`${first?.systemPrompt}\nLATER EXTENSION`).toEndWith('LATER EXTENSION');
 
     const second = runtime.beforeAgentStart('HOST\nPROJECT APPEND');

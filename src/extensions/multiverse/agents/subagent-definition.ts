@@ -12,6 +12,16 @@ export interface SubagentDefinition {
   name: BundledSubagentName;
   tools: string[];
   skills: string[];
+  /**
+   * Parent-facing routing lines, rendered verbatim as Markdown bullets in the Megamind
+   * prompt's `<Agents>` block.
+   *
+   * Deliberately unstructured: routing guidance is prose aimed at a model, and the useful
+   * shape differs per lane, so a fixed field set would force every agent into one
+   * author's idea of what matters. Distinct from `prompt`, which is the child's own
+   * second-person system prompt and must never reach the parent.
+   */
+  metadata: string[];
   prompt: string;
   filePath: string;
 }
@@ -31,6 +41,7 @@ const FrontmatterSchema = z.strictObject({
   name: z.string().min(1),
   tools: z.array(z.string().min(1)),
   skills: z.array(z.string().min(1)),
+  metadata: z.array(z.string().min(1)).min(1),
 });
 
 const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)([\s\S]*)$/;
@@ -134,6 +145,7 @@ export function loadSubagentDefinitions(options: SubagentDefinitionLoadOptions):
       name: expectedName,
       tools: [...parsed.data.tools],
       skills: [...parsed.data.skills],
+      metadata: [...parsed.data.metadata],
       prompt,
       filePath,
     });

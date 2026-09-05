@@ -8,6 +8,7 @@ const definition: SubagentDefinition = {
   name: 'fixer',
   tools: ['read', 'edit'],
   skills: [],
+  metadata: ['Lane: test lane'],
   prompt: 'fixer prompt',
   filePath: '/tmp/fixer.md',
 };

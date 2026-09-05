@@ -11,27 +11,58 @@ const definition = (name: string): SubagentDefinition => ({
   name: name as BundledSubagentName,
   tools: ['read'],
   skills: [],
+  metadata: [`Lane: ${name} lane`, `**Delegate when:** ${name} delegate case`],
   prompt: `${name} prompt body`,
   filePath: `/${name}.md`,
 });
 
+const routingFrontmatter = (name: string): string =>
+  [
+    '---',
+    `name: ${name}`,
+    'tools: ["read"]',
+    'skills: []',
+    'metadata:',
+    `  - "Lane: ${name} lane"`,
+    '---',
+    `${name} live prompt`,
+    '',
+  ].join('\n');
+
 describe('buildMegamindPrompt', () => {
-  it('assembles the fixture introduction with one section per roster member', () => {
+  it('assembles the fixture introduction with one routing block per roster member', () => {
     const roster = new Map<BundledSubagentName, SubagentDefinition>([
       ['explorer', definition('explorer')],
       ['fixer', definition('fixer')],
     ]);
-    const prompt = buildMegamindPrompt({ intro: 'fixture intro', roster });
+    const prompt = buildMegamindPrompt({ intro: 'fixture intro', roster, maxConcurrency: 5 });
 
     expect(prompt).toStartWith('fixture intro');
-    expect(prompt).toContain('### explorer\nTools: read\n\nexplorer prompt body');
-    expect(prompt).toContain('### fixer\nTools: read\n\nfixer prompt body');
-    expect(prompt.indexOf('### explorer')).toBeLessThan(prompt.indexOf('### fixer'));
+    expect(prompt).toContain('@explorer\n- Tools: read\n- Lane: explorer lane');
+    expect(prompt).toContain('- **Delegate when:** fixer delegate case');
+    expect(prompt.indexOf('@explorer')).toBeLessThan(prompt.indexOf('@fixer'));
+  });
+
+  it('renders parent-facing metadata rather than the child prompt body', () => {
+    const roster = new Map<BundledSubagentName, SubagentDefinition>([['explorer', definition('explorer')]]);
+    const prompt = buildMegamindPrompt({ intro: 'fixture intro', roster, maxConcurrency: 5 });
+
+    expect(prompt).not.toContain('explorer prompt body');
+  });
+
+  it('states the pool size as mechanism and warns against splitting batches', () => {
+    const roster = new Map<BundledSubagentName, SubagentDefinition>([['explorer', definition('explorer')]]);
+
+    expect(buildMegamindPrompt({ intro: 'i', roster, maxConcurrency: 3 })).toContain('runs 3 of them at a time');
+    expect(buildMegamindPrompt({ intro: 'i', roster, maxConcurrency: 3 })).toContain('up to 10 tasks');
+    expect(buildMegamindPrompt({ intro: 'i', roster, maxConcurrency: 99 })).toContain('runs 10 of them at a time');
+    expect(buildMegamindPrompt({ intro: 'i', roster, maxConcurrency: 1 })).toContain('runs 1 of them at a time');
+    expect(buildMegamindPrompt({ intro: 'i', roster, maxConcurrency: 3 })).toContain('Do not split a batch');
   });
 
   it('returns empty while the introduction is unapproved', () => {
-    expect(buildMegamindPrompt({ intro: '', roster: new Map() })).toBe('');
-    expect(buildMegamindPrompt({ intro: '   ', roster: new Map([['explorer', definition('explorer')]]) })).toBe('');
+    expect(buildMegamindPrompt({ intro: '', roster: new Map(), maxConcurrency: 5 })).toBe('');
+    expect(buildMegamindPrompt({ intro: '   ', roster: new Map([['explorer', definition('explorer')]]), maxConcurrency: 5 })).toBe('');
   });
 });
 
@@ -48,7 +79,7 @@ describe('resolveMegamindEligibility dynamic roster', () => {
 
   it('describes only the enabled valid roster in the assembled prompt', () => {
     for (const name of ['explorer', 'fixer', 'visualizer']) {
-      writeFileSync(path.join(directory, `${name}.md`), `---\nname: ${name}\ntools: ["read"]\nskills: []\n---\n${name} live prompt\n`);
+      writeFileSync(path.join(directory, `${name}.md`), routingFrontmatter(name));
     }
     const result = resolveMegamindEligibility({
       config: MultiverseConfigSchema.parse({ enabled: true, subagents: { fixer: { enabled: false } } }),
@@ -61,9 +92,9 @@ describe('resolveMegamindEligibility dynamic roster', () => {
     expect(result.eligible).toBe(true);
     if (!result.eligible) return;
     expect([...result.roster.keys()]).toEqual(['explorer', 'visualizer']);
-    expect(result.prompt).toContain('### explorer');
-    expect(result.prompt).toContain('### visualizer');
-    expect(result.prompt).not.toContain('### fixer');
+    expect(result.prompt).toContain('@explorer');
+    expect(result.prompt).toContain('@visualizer');
+    expect(result.prompt).not.toContain('@fixer');
     expect(result.prompt).not.toContain('fixer live prompt');
   });
 });

@@ -8,6 +8,8 @@ const definition = (name: string, options: { tools?: string[]; skills?: string[]
 name: ${name}
 tools: ${JSON.stringify(options.tools ?? ['read'])}
 skills: ${JSON.stringify(options.skills ?? [])}
+metadata:
+  - "Lane: ${name} lane"
 ---
 ${options.body ?? `${name} prompt`}
 `;

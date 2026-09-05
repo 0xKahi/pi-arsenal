@@ -9,6 +9,7 @@ const definition: SubagentDefinition = {
   name: 'explorer',
   tools: ['read'],
   skills: [],
+  metadata: ['Lane: test lane'],
   prompt: 'child prompt',
   filePath: '/tmp/explorer.md',
 };

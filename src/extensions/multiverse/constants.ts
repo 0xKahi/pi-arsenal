@@ -32,10 +32,17 @@ export const RESULT_BOUNDARY_NONCE_BYTES = 3;
 /**
  * Circuit breaker for runaway child output, not a budget for routine reports.
  *
- * Sized well above an ordinary subagent final message (a verbose report runs a few
- * hundred lines and single-digit kilobytes) so the common path never trips it; it exists
- * only to stop a looping or file-dumping child from consuming the parent's context.
+ * Sized so no legitimate final message can reach it: a verbose subagent survey runs a few
+ * hundred lines and single-digit kilobytes, so this sits an order of magnitude above the
+ * plausible honest maximum. It exists only to stop a looping or file-dumping child from
+ * evicting the parent's context, which the parent cannot recover from.
+ *
+ * Because it only ever fires on pathological output, there is no remedy to offer: the
+ * body is cut, marked, and that is the end of it. Nothing instructs the parent to
+ * continue the child for the remainder — a child that ignored its conciseness
+ * instructions once has no new reason to obey them on a retry.
+ *
  * Declared here once: `results/output-cap.ts` re-exports these rather than redeclaring.
  */
-export const MAX_OUTPUT_LINES = 2_000;
-export const MAX_OUTPUT_BYTES = 64 * 1024;
+export const MAX_OUTPUT_LINES = 20_000;
+export const MAX_OUTPUT_BYTES = 256 * 1024;

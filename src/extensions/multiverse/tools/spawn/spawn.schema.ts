@@ -2,14 +2,13 @@ import { Type } from 'typebox';
 import { BUNDLED_SUBAGENT_NAMES, type BundledSubagentName } from '../../agents/subagent-definition.ts';
 
 /**
- * Upper bound on tasks in one call.
+ * Hard ceiling on tasks in one call, matching the configurable concurrency maximum.
  *
  * Bounds both the rendered height of the tool row and the details written to the parent
- * session; tasks beyond the concurrency pool only queue anyway.
+ * session. The Megamind prompt advises the configured `maxConcurrency` instead, which is
+ * at or below this; tasks beyond the pool only queue anyway.
  */
-export const MAX_SPAWN_TASKS = 20;
-
-const optionalName = { name: Type.Optional(Type.String({ minLength: 1, description: 'Short label shown in the parent UI for this task.' })) };
+export const MAX_SPAWN_TASKS = 10;
 
 const createTask = Type.Object(
   {
@@ -19,7 +18,6 @@ const createTask = Type.Object(
       { description: 'Subagent that runs this task.' },
     ),
     task: Type.String({ minLength: 1, description: 'Task-specific instructions for this child.' }),
-    ...optionalName,
   },
   { additionalProperties: false },
 );
@@ -29,7 +27,6 @@ const continueTask = Type.Object(
     action: Type.Literal('continue'),
     childSessionId: Type.String({ minLength: 1, description: 'Durable child session ID returned by an earlier spawn call.' }),
     task: Type.String({ minLength: 1, description: 'Task-specific instructions for this child.' }),
-    ...optionalName,
   },
   { additionalProperties: false },
 );
@@ -46,8 +43,8 @@ export const spawnParameters = Type.Object(
   { additionalProperties: false },
 );
 
-export type SpawnCreateTask = { action: 'create'; agent: BundledSubagentName; task: string; name?: string };
-export type SpawnContinueTask = { action: 'continue'; childSessionId: string; task: string; name?: string };
+export type SpawnCreateTask = { action: 'create'; agent: BundledSubagentName; task: string };
+export type SpawnContinueTask = { action: 'continue'; childSessionId: string; task: string };
 export type SpawnTask = SpawnCreateTask | SpawnContinueTask;
 
 export interface SpawnInput {
@@ -82,7 +79,6 @@ export function validateSpawnInput(input: unknown, options: SpawnValidationOptio
       failures.push(`Task ${index + 1} must be an object.`);
       continue;
     }
-    const name = extractOptionalName(task, index, failures);
     if (task.action === 'create') {
       if (typeof task.agent !== 'string' || typeof task.task !== 'string' || !task.task.trim()) {
         failures.push(`Create task ${index + 1} requires agent and non-empty task.`);
@@ -92,8 +88,8 @@ export function validateSpawnInput(input: unknown, options: SpawnValidationOptio
         failures.push(`Create task ${index + 1} targets unavailable agent "${task.agent}".`);
         continue;
       }
-      rejectUnknownFields(task, 'create', ['action', 'agent', 'task', 'name'], index, failures);
-      tasks.push({ action: 'create', agent: task.agent as BundledSubagentName, task: task.task, name });
+      rejectUnknownFields(task, 'create', ['action', 'agent', 'task'], index, failures);
+      tasks.push({ action: 'create', agent: task.agent as BundledSubagentName, task: task.task });
       continue;
     }
     if (task.action === 'continue') {
@@ -106,8 +102,8 @@ export function validateSpawnInput(input: unknown, options: SpawnValidationOptio
         continue;
       }
       continueIds.add(task.childSessionId);
-      rejectUnknownFields(task, 'continue', ['action', 'childSessionId', 'task', 'name'], index, failures);
-      tasks.push({ action: 'continue', childSessionId: task.childSessionId, task: task.task, name });
+      rejectUnknownFields(task, 'continue', ['action', 'childSessionId', 'task'], index, failures);
+      tasks.push({ action: 'continue', childSessionId: task.childSessionId, task: task.task });
       continue;
     }
     failures.push(`Task ${index + 1} must use action "create" or "continue".`);
@@ -123,20 +119,12 @@ export function buildChildPrompt(context: string, task: SpawnTask): string {
 }
 
 export function describeTask(task: SpawnTask, index: number): string {
-  if (task.name) return task.name;
   return task.action === 'create' ? `${task.agent} task ${index + 1}` : `continue ${task.childSessionId}`;
 }
 
 function rejectUnknownFields(task: Record<string, unknown>, action: string, allowed: string[], index: number, failures: string[]): void {
   const unknown = Object.keys(task).filter(key => !allowed.includes(key));
   if (unknown.length > 0) failures.push(`${action} task ${index + 1} contains unknown fields: ${unknown.join(', ')}.`);
-}
-
-function extractOptionalName(task: Record<string, unknown>, index: number, failures: string[]): string | undefined {
-  if (task.name === undefined) return undefined;
-  if (typeof task.name === 'string' && task.name.trim()) return task.name;
-  failures.push(`Task ${index + 1} name must be a non-empty string when supplied.`);
-  return undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

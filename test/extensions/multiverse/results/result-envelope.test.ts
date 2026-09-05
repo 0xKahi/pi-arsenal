@@ -53,7 +53,6 @@ describe('buildResultEnvelope', () => {
       childInteraction({
         interactionId: 'mv-interaction-0',
         taskIndex: 0,
-        name: 'implementation',
         checkpointBefore: 'leaf-before',
         checkpointAfter: 'leaf-after',
         childSessionFile: '/sessions/child-1.jsonl',
@@ -72,11 +71,12 @@ describe('buildResultEnvelope', () => {
     expect(envelope.content).not.toContain('implementation');
   });
 
-  it('points a capped body at continuing the child rather than at a file', () => {
+  it('states a capped body as fact, offering no remedy and no file path', () => {
     const envelope = buildResultEnvelope([childInteraction({ body: 'partial', truncation: { totalBytes: 99, totalLines: 9 } })]);
 
-    expect(envelope.content).toContain('truncated: output exceeded the size cap; continue this child session for the remainder or a summary');
+    expect(envelope.content).toContain('truncated: output exceeded the size cap and was cut');
     expect(envelope.content).not.toContain('.jsonl');
+    expect(envelope.content).not.toContain('continue this child');
     // Sizes are user-only. Checked on the truncation line itself: the header's random nonce
     // is hex and can legitimately contain any digit pair.
     const truncationLine = envelope.content.split('\n').find(line => line.startsWith('truncated:')) ?? '';

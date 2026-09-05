@@ -190,7 +190,7 @@ export class SpawnResultComponent implements Component {
             ...this.wrapField(
               safeWidth,
               'truncated',
-              `from ${interaction.truncation.totalLines} lines / ${interaction.truncation.totalBytes} bytes; continue this child for the rest`,
+              `cut from ${interaction.truncation.totalLines} lines / ${interaction.truncation.totalBytes} bytes`,
               'muted',
             ),
           );
@@ -307,7 +307,7 @@ export function buildSpawnRows(options: {
     const interaction = interactions[index];
     return {
       index,
-      label: live?.label ?? interaction?.name ?? (task ? describeFallbackLabel(task, index) : `task ${index + 1}`),
+      label: live?.label ?? (task ? describeFallbackLabel(task, index) : `task ${index + 1}`),
       agent: live?.agent ?? interaction?.agent ?? (task?.action === 'create' ? task.agent : 'child'),
       action: live?.action ?? (task?.action === 'continue' || (!task && interaction?.childSessionId && !live) ? 'continue' : 'create'),
       phase: live?.phase ?? phaseFromInteraction(interaction),
@@ -326,7 +326,6 @@ export function buildSpawnRows(options: {
 }
 
 function describeFallbackLabel(task: SpawnTask, index: number): string {
-  if (task.name) return task.name;
   return task.action === 'create' ? `${task.agent} task ${index + 1}` : `continue ${task.childSessionId}`;
 }
 

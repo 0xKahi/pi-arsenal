@@ -9,6 +9,8 @@ const definition = (name: string, prompt: string, tools = ['read']) => `---
 name: ${name}
 tools: ${JSON.stringify(tools)}
 skills: []
+metadata:
+  - "Lane: ${name} lane"
 ---
 ${prompt}
 `;

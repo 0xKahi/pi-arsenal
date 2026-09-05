@@ -9,7 +9,7 @@ import { childInteraction } from '../interaction-fixture.ts';
 
 describe('ChildInteraction', () => {
   it('serializes branch-scoped interaction and checkpoint correlation', () => {
-    const interaction = childInteraction({ checkpointBefore: 'leaf-before', checkpointAfter: 'leaf-after', name: 'implementation' });
+    const interaction = childInteraction({ checkpointBefore: 'leaf-before', checkpointAfter: 'leaf-after' });
 
     expect(JSON.parse(JSON.stringify(interaction))).toEqual(interaction);
     expect(isChildInteraction(interaction)).toBe(true);

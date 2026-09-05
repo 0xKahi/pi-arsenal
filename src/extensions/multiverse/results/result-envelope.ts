@@ -8,7 +8,8 @@ export interface ResultEnvelope {
   nonce: string;
 }
 
-const TRUNCATION_NOTICE = 'truncated: output exceeded the size cap; continue this child session for the remainder or a summary';
+/** States the fact and stops. Offers no remedy, because output this large is a malfunction. */
+const TRUNCATION_NOTICE = 'truncated: output exceeded the size cap and was cut';
 
 /**
  * Frame each child body with a per-call boundary nonce.

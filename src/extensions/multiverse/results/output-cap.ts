@@ -20,8 +20,9 @@ export interface TruncatedOutput {
 /**
  * Circuit breaker on runaway child output.
  *
- * The remainder is recovered by continuing the child session, which still holds the full
- * text in its own context, so nothing here depends on a session file path or checkpoint.
+ * The cut is final and offers no remedy. The threshold is set so far above honest output
+ * that anything tripping it is a loop or a file dump, where the severed tail has no value
+ * worth a second round trip to retrieve.
  */
 export function capOutput(text: string, limits: OutputLimits = { maxLines: MAX_OUTPUT_LINES, maxBytes: MAX_OUTPUT_BYTES }): TruncatedOutput {
   const totalBytes = new TextEncoder().encode(text).length;

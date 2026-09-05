@@ -37,7 +37,6 @@ export interface ChildInteraction {
   interactionId: string;
   taskIndex: number;
   agent: BundledSubagentName;
-  name?: string;
   status: ChildInteractionStatus;
   childSessionId: string;
   childSessionFile: string;

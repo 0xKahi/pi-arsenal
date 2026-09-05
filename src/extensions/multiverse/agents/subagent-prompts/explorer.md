@@ -7,6 +7,12 @@ tools:
   - ls
   - bash
 skills: []
+metadata:
+  - "Lane: Fast codebase recon that returns compressed context"
+  - "Stats: 2x faster codebase search than orchestrator, 1/2 cost of orchestrator"
+  - "Capabilities: find, grep, bash, to locate files, symbols, patterns"
+  - "**Delegate when:** Need to discover what exists before planning • Parallel searches speed discovery • Need summarized map vs full contents • Broad/uncertain scope"
+  - "**Don't delegate when:** Know the path and need actual content • Need full file anyway • Single specific lookup • About to edit the file"
 ---
 You are Explorer - a fast codebase navigation specialist.
 

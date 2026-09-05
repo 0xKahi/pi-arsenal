@@ -7,7 +7,14 @@ import type { ChildInteractionOutcome } from '../../../../src/extensions/multive
 import type { ChildSessionRepository } from '../../../../src/extensions/multiverse/runtime/child-session-repository.ts';
 import { childInteraction } from '../interaction-fixture.ts';
 
-const definition: SubagentDefinition = { name: 'fixer', tools: ['read'], skills: [], prompt: 'fixer prompt', filePath: '/tmp/fixer.md' };
+const definition: SubagentDefinition = {
+  name: 'fixer',
+  tools: ['read'],
+  skills: [],
+  metadata: ['Lane: test lane'],
+  prompt: 'fixer prompt',
+  filePath: '/tmp/fixer.md',
+};
 const model = { provider: 'anthropic', id: 'model' } as never;
 
 const outcome = (overrides: Partial<ChildInteractionOutcome> = {}): ChildInteractionOutcome => ({
@@ -225,7 +232,7 @@ describe('runSpawn', () => {
     const snapshots: string[] = [];
 
     await runSpawn(
-      { context: 'shared context', tasks: [{ action: 'create', agent: 'fixer', task: 'x', name: 'labelled' }] },
+      { context: 'shared context', tasks: [{ action: 'create', agent: 'fixer', task: 'x' }] },
       makeDependencies(state),
       {
         onProgress: progress =>
@@ -238,9 +245,9 @@ describe('runSpawn', () => {
       },
     );
 
-    expect(snapshots[0]).toBe('labelled:queued');
-    expect(snapshots).toContain('labelled:waiting');
-    expect(snapshots.at(-1)).toBe('labelled:replied');
+    expect(snapshots[0]).toBe('fixer task 1:queued');
+    expect(snapshots).toContain('fixer task 1:waiting');
+    expect(snapshots.at(-1)).toBe('fixer task 1:replied');
   });
 
   it('allows only one managed writer per child within a call', async () => {

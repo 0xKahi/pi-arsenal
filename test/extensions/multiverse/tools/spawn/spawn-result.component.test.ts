@@ -139,7 +139,7 @@ describe('SpawnResultComponent', () => {
     expect(output).toContain('child: child-1');
     expect(output).toContain('checkpoints: none → leaf');
     expect(output).toContain('telemetry: anthropic/model');
-    expect(output).toContain('truncated: from 9 lines / 99 bytes');
+    expect(output).toContain('truncated: cut from 9 lines / 99 bytes');
     expect(output).toContain('the child response');
     // Envelope boundary markup is model-facing only and never rendered to the user.
     expect(output).not.toContain('TASK_1_RESPONSE');

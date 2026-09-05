@@ -15,7 +15,7 @@ describe('spawn input validation', () => {
       {
         context: 'shared context',
         tasks: [
-          { action: 'create', agent: 'fixer', task: 'implement', name: 'implementation' },
+          { action: 'create', agent: 'fixer', task: 'implement' },
           { action: 'continue', childSessionId: 'child-1', task: 'follow up' },
         ],
       },
@@ -62,8 +62,7 @@ describe('buildChildPrompt', () => {
     expect(prompt).toBe('shared context\n\nimplement narrowly');
   });
 
-  it('labels tasks by explicit name, agent, or continuation target', () => {
-    expect(describeTask({ action: 'create', agent: 'fixer', task: 'x', name: 'label' }, 0)).toBe('label');
+  it('labels tasks by agent or continuation target', () => {
     expect(describeTask({ action: 'create', agent: 'fixer', task: 'x' }, 0)).toBe('fixer task 1');
     expect(describeTask({ action: 'continue', childSessionId: 'child-1', task: 'x' }, 1)).toBe('continue child-1');
   });
