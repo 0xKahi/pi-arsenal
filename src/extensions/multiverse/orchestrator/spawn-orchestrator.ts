@@ -1,6 +1,5 @@
 import type { Api, Model } from '@earendil-works/pi-ai';
-import type { CurrentSubagentResult } from '../agents/current-subagent.ts';
-import type { BundledSubagentName } from '../agents/subagent-definition.ts';
+import type { SubAgentRegistry } from '../agents/subagent-registry.ts';
 import { CHILD_INTERACTION_VERSION } from '../constants.ts';
 import { type ChildInteraction, createInteractionId, resolveCheckpointAfter } from '../results/child-interaction.types.ts';
 import { capOutput } from '../results/output-cap.ts';
@@ -24,9 +23,9 @@ export interface SpawnOrchestratorDependencies {
   model: Model<Api>;
   thinkingLevel: ChildThinkingLevel;
   registry: ModelResolutionRegistry;
-  subagentModel: (name: BundledSubagentName) => SubagentModelConfig | undefined;
-  subagentReasoning: (name: BundledSubagentName) => ChildThinkingLevel | undefined;
-  resolveSubagent: (name: BundledSubagentName) => CurrentSubagentResult;
+  subagentModel: (name: string) => SubagentModelConfig | undefined;
+  subagentReasoning: (name: string) => ChildThinkingLevel | undefined;
+  getSubAgent: SubAgentRegistry['getSubAgent'];
   /** Resolves a continuation target from the active parent branch only. */
   resolveContinuation: (childSessionId: string) => ChildInteraction | undefined;
   hydrate?: typeof hydrateChildInteraction;
@@ -104,8 +103,10 @@ async function runTask(context: RunTaskInput): Promise<ChildInteraction> {
   if (!agent) return placeholderInteraction(task, index, 'failure', unreachableChild((task as { childSessionId: string }).childSessionId));
   context.progress.resolveAgent(index, agent);
 
-  const resolved = dependencies.resolveSubagent(agent);
-  if (!resolved.success) return placeholderInteraction(task, index, 'failure', resolved.error, agent);
+  const resolved = dependencies.getSubAgent(agent);
+  if (!resolved?.enabled) {
+    return placeholderInteraction(task, index, 'failure', `Subagent "${agent}" is ${resolved ? 'disabled' : 'not registered'}.`, agent);
+  }
 
   const model = await resolveSubagentModel({
     configured: dependencies.subagentModel(agent),
@@ -132,7 +133,7 @@ async function runTask(context: RunTaskInput): Promise<ChildInteraction> {
   try {
     const outcome = await context.hydrate({
       cwd: dependencies.cwd,
-      definition: resolved.definition,
+      definition: resolved.agent,
       sessionManager: handle.sessionManager,
       model: model.model,
       thinkingLevel,
@@ -175,7 +176,7 @@ function placeholderInteraction(
   index: number,
   status: 'failure' | 'aborted',
   error?: string,
-  agent: BundledSubagentName = 'explorer',
+  agent: string = 'unknown',
 ): ChildInteraction {
   return {
     version: CHILD_INTERACTION_VERSION,

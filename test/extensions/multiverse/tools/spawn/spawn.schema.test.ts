@@ -27,6 +27,14 @@ describe('spawn input validation', () => {
     expect(spawnParameters.type).toBe('object');
   });
 
+  it('accepts any registered string name instead of a bundled enum', () => {
+    const input = { context: 'shared', tasks: [{ action: 'create' as const, agent: 'researcher', task: 'investigate' }] };
+    expect(validateSpawnInput(input, { availableAgents: ['researcher'] })).toEqual(input);
+    expect(() => validateSpawnInput(input, { availableAgents: [] })).toThrow('unavailable agent');
+    expect(JSON.stringify(spawnParameters)).not.toContain('explorer');
+    expect(JSON.stringify(spawnParameters)).not.toContain('visualizer');
+  });
+
   it('bounds the batch size in both the published schema and preflight validation', () => {
     const tasks = Array.from({ length: MAX_SPAWN_TASKS + 1 }, () => ({ action: 'create', agent: 'fixer', task: 'x' }));
 

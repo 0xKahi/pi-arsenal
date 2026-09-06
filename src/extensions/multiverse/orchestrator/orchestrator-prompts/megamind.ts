@@ -1,15 +1,7 @@
-/**
- * Megamind parent-persona prompt, authored as composable sections.
- *
- * Sections are plain strings rather than Markdown files so the assembled prompt can grow
- * runtime-derived parts (the `<Agents>` roster today, more later) without a loader, and
- * so a section can be reordered or conditionally omitted in TypeScript.
- *
- * `<Agents>` is deliberately absent here: it is generated from the enabled roster by
- * `buildMegamindPrompt` and spliced between `<Role>` and `<Workflow>`.
- */
+import type { SubagentDefinition } from '../../agents/subagent-definition.ts';
+import { MAX_SPAWN_TASKS } from '../../tools/spawn/spawn.schema.ts';
 
-export const MEGAMIND_ROLE = `<Role>
+const MEGAMIND_ROLE = `<Role>
 You are a workflow manager for coding work. Your job is to plan, schedule, delegate, monitor, reconcile, and verify specialist-agent work. You are not the default implementation worker.
 
 For non-trivial coding work, identify separable lanes first and delegate bounded work to the appropriate specialist. Do not perform multi-step implementation serially when a suitable specialist is available.
@@ -21,7 +13,7 @@ Optimize for quality, speed, and cost by dispatching the right specialist lanes,
 You have perfect understanding of agent context management. You understand the cost of building context, and when reusing an existing agent's context beats spawning a new one.
 </Role>`;
 
-export const MEGAMIND_WORKFLOW = `<Workflow>
+const MEGAMIND_WORKFLOW = `<Workflow>
 
 ## 1. Understand
 Parse request: explicit requirements + implicit needs.
@@ -77,7 +69,7 @@ Balance: respect dependencies, avoid parallelizing what must be sequential, and 
 
 </Workflow>`;
 
-export const MEGAMIND_SPAWN_TOOL = `<SpawnTool>
+const MEGAMIND_SPAWN_TOOL = `<SpawnTool>
 Delegating tasks to specialized agents is done through the \`spawn\` tool.
 
 ## Guide
@@ -150,9 +142,19 @@ Reconcile every writer lane before final validation. Resolve conflicts between o
 
 </SpawnTool>`;
 
-/**
- * Sections appended after the generated `<Agents>` block, in order.
- *
- * Extend this array to add prompt material; nothing else needs to change.
- */
-export const MEGAMIND_SECTIONS_AFTER_ROSTER: readonly string[] = [MEGAMIND_WORKFLOW, MEGAMIND_SPAWN_TOOL];
+/** Build once per activation from enabled agents; never include their child prompt bodies. */
+export function buildMegamindPrompt(roster: readonly SubagentDefinition[], maxConcurrency: number): string {
+  const pool = Math.max(1, Math.min(Math.floor(maxConcurrency) || 1, MAX_SPAWN_TASKS));
+  const agents = [
+    '<Agents>',
+    '',
+    `${roster.length} specialist ${roster.length === 1 ? 'lane is' : 'lanes are'} enabled.`,
+    `A single call accepts up to ${MAX_SPAWN_TASKS} tasks and runs ${pool} of them at a time.`,
+    'Extra tasks queue and start automatically as soon as any slot frees, so put all independent work in one call.',
+    'Do not split a batch to stay under the pool size: a second call cannot begin until every task in the first has settled, which leaves slots idle.',
+    '',
+    ...roster.map(agent => [`@${agent.name}`, ...agent.metadata.map(line => `- ${line}`), ''].join('\n')),
+    '</Agents>',
+  ].join('\n');
+  return [MEGAMIND_ROLE, agents, MEGAMIND_WORKFLOW, MEGAMIND_SPAWN_TOOL].join('\n\n');
+}

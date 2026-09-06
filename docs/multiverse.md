@@ -1,6 +1,6 @@
 # Multiverse
 
-Multiverse adds durable parent-owned subagents `explorer`, `fixer`, and `visualizer`. Their definitions are loaded from `src/extensions/multiverse/agents/subagent-prompts/<name>.md` on every activation and intentionally roll forward for reopened sessions.
+Multiverse adds durable parent-owned subagents, initially shipping `explorer`, `fixer`, and `visualizer`. Markdown files in `src/extensions/multiverse/agents/subagent-prompts/` are discovered and parsed once per extension instance. The registry uses each definition's declared string name, independent of filename; no bundled-name enum limits registration. Definitions intentionally roll forward on reload/reopen, not on each turn or spawn lookup.
 
 ## Configuration
 
@@ -19,10 +19,11 @@ Multiverse adds durable parent-owned subagents `explorer`, `fixer`, and `visuali
 }
 ```
 
-- `enabled`: disabled by default; marked existing child sessions remain recognizable.
+- `enabled`: disabled by default. While disabled, Multiverse adds no persona prompt or child tool restrictions and `spawn` cannot execute. Directly opening an existing marked child uses ordinary Pi behavior, subject to other active extensions. Markers remain stored and take effect again after enabling and reloading.
 - `defaultAgent`: `default` or `megamind`, restored by append-only `arsenal-parent-agent` entries.
 - `maxConcurrency`: one batch-wide pool, `1..10`, default `5`.
-- Nested global and trusted-project settings merge; invalid Multiverse settings disable only that feature.
+- `subagents`: settings keyed by registered agent name; names without settings default to enabled with parent-model fallback. Configuration alone does not register an agent.
+- Nested global and trusted-project settings merge by name; invalid Multiverse settings disable only that feature.
 
 ## Durable children
 
@@ -32,7 +33,11 @@ Continuation resolves the latest valid child reference from branch-scoped parent
 
 ## Prompt and capability policy
 
-A child prompt fully replaces the host prompt, appended files, CLI_prompt additions, and Megamind content. Tools are the current definition's exact list through `pi.setActiveTools()`, reapplied at `session_start` so the selection is in place before the first model turn. Skills filter ambient SDK resources for children created through the SDK, with empty meaning none.
+While enabled, a child prompt fully replaces the host prompt, appended files, CLI prompt additions, and Megamind content. At `session_start`, the registered subset of the definition's tools becomes active; undeclared tools are removed. Unknown tools produce a file-specific warning without disabling the agent. Duplicate tools and skills are silently deduplicated. Malformed YAML, missing required fields (`name`, `tools`, `skills`, `metadata`), and empty prompts still fail parsing.
+
+Unknown skills are ignored in V1. Bundled definitions declare no skills and SDK children receive no ambient skills. Further skill support and directly reopened skill-command enforcement are deferred.
+
+Availability is resolved at session start after arsenal config initialization. `before_agent_start` only applies the registered child prompt or builds/appends Megamind's prompt from the in-memory roster and current config; it does not reload files or mutate tools. Megamind roster entries contain names and authored metadata, not generated tool lists or child prompt bodies.
 
 ## The `spawn` tool
 
@@ -42,13 +47,13 @@ A child prompt fully replaces the host prompt, appended files, CLI_prompt additi
 {
   "context": "shared context for every task",
   "tasks": [
-    { "action": "create", "agent": "fixer", "task": "implement narrowly", "name": "impl" },
+    { "action": "create", "agent": "fixer", "task": "implement narrowly" },
     { "action": "continue", "childSessionId": "<id from an earlier spawn>", "task": "follow up" }
   ]
 }
 ```
 
-The call blocks until every task settles. All tasks share one concurrency pool sized by `maxConcurrency`, failures are isolated, and exactly one ordered entry is returned per input. One call carries at most 20 tasks.
+The call blocks until every task settles. All tasks share one concurrency pool sized by `maxConcurrency`, failures are isolated, and exactly one ordered entry is returned per input. One call carries at most 10 tasks.
 
 Model-facing content is exactly a header line plus one frame per task, bounded by a per-call random nonce that is never disclosed to a child, so child output can never forge or terminate a neighbouring frame:
 
@@ -64,7 +69,7 @@ status: success
 --TASK_1_END-a4f9c2--
 ```
 
-Header fields are computed by the runtime; everything after the RESPONSE boundary is the child's own untrusted report, reproduced byte-for-byte. `error` appears only when the runtime failed to obtain a usable response, and a `truncated:` notice only when the body tripped the output cap; that notice directs you to continue the child session, never to a file path. Boundary numbers are 1-based.
+Header fields are computed by the runtime; everything after the RESPONSE boundary is the child's own untrusted report, reproduced byte-for-byte. `error` appears only when the runtime failed to obtain a usable response, and a `truncated:` notice only when the body tripped the output cap. The cap is a circuit breaker sized far above any legitimate report (20,000 lines / 256 KB), so tripping it means a child looped or dumped a file; the notice states the cut and proposes no remedy, because re-running a child that ignored its conciseness instructions tends to reproduce the same output. Boundary numbers are 1-based.
 
 Every task produces one `ChildInteraction` in the tool-result details: interaction ID, task index, agent, status, child session ID and file, before/after checkpoints, truncation size, and user-only telemetry. Continuation reads exactly that record from the active parent branch.
 
@@ -105,6 +110,6 @@ Multiverse reports no account of which files a child changed. All bundled subage
 - No second `tool_call` guard: an enabled council may still connect even if its tools are inactive.
 - No file-touch reporting at all: use the child's session file or the working tree.
 - Parent crashes may leave an interaction without a reference; it is preserved but not imported.
-- The parent persona switch is exposed as `selectParentAgent` on the activation; the user-facing command and shortcut that call it are added last.
+- Explicit parent switching is deferred to the future Pi command. This cleanup retains configured defaults and saved preference restoration, but exposes no `selectParentAgent` callback or pending-persona mechanism.
 
-The Megamind parent prompt is assembled at runtime in `src/extensions/multiverse/orchestrator/megamind-prompt.ts` from a maintainer-approved introduction plus the currently enabled roster; it stays ineligible while the introduction is empty.
+The approved Megamind content and builder live together in `src/extensions/multiverse/orchestrator/orchestrator-prompts/megamind.ts`. Megamind eligibility depends on enabled Multiverse and an available registered roster, not an introduction placeholder. Spawn execution reads the current model, thinking level, config, and active parent branch while reusing registry lookups.

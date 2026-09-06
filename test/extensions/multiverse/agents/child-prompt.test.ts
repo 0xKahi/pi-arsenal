@@ -8,8 +8,8 @@ const config: ConfigProvider = {
   getP2pCouncil: () => ({ enabled: false, layout: 'inline' }),
   getTmuxPopup: () => ({ enabled: false, width: 50, height: 50, fileCommand: 'nvim' }),
   getMultiverse: () => ({
-    enabled: false,
-    defaultAgent: 'megamind',
+    enabled: true,
+    defaultAgent: 'default',
     maxConcurrency: 5,
     subagents: { explorer: { enabled: true }, fixer: { enabled: true }, visualizer: { enabled: true } },
   }),
@@ -44,7 +44,7 @@ describe('child prompt policy', () => {
       sessionManager: { getEntries: () => entries },
       ui: { notify: (message: string) => notifications.push(message) },
     } as unknown as ExtensionContext;
-    registerMultiverse(pi, { config, availableSkills: () => [] });
+    registerMultiverse(pi, { config });
     return { handlers, ctx, notifications, activeToolSelections };
   };
 

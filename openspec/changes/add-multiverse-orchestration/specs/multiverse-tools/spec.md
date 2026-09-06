@@ -5,7 +5,7 @@ Defines the blocking batch interface for creating and continuing durable childre
 ## ADDED Requirements
 
 ### Requirement: Batch interaction tool
-While Megamind is active, the system SHALL provide one tool accepting shared `context` and a non-empty ordered task array. Each task SHALL explicitly choose `create` with an enabled subagent and task text, or `continue` with a child session ID and task text, and MAY include a short name. The entire request SHALL be validated before dispatch.
+While Multiverse is enabled and Megamind is active in a parent session, the system SHALL provide one tool accepting shared `context` and a non-empty ordered task array. Each task SHALL explicitly choose `create` with an enabled subagent and task text, or `continue` with a child session ID and task text, and MAY include a short name. The entire request SHALL be validated before dispatch.
 
 #### Scenario: Create and continue in one batch
 - **WHEN** a valid batch mixes new-child and existing-child tasks
@@ -18,6 +18,21 @@ While Megamind is active, the system SHALL provide one tool accepting shared `co
 #### Scenario: Empty batch rejected
 - **WHEN** the task array is empty
 - **THEN** the call fails before dispatch
+
+### Requirement: Spawn admission uses resolved activation
+The registered spawn tool SHALL admit execution only from an enabled, eligible Megamind parent. Admission and create-target validation SHALL use the same resolved session registry and SHALL NOT reload definitions or rebuild prompts. A disabled feature, Default parent, or enabled child SHALL be rejected before dispatch even if the registered tool is invoked directly.
+
+#### Scenario: Disabled execution is refused
+- **WHEN** spawn is invoked while Multiverse is disabled
+- **THEN** the tool rejects the call without constructing an SDK child or writing a dispatch manifest
+
+#### Scenario: Default or child execution is refused
+- **WHEN** spawn is invoked from Default or an enabled child session
+- **THEN** the tool rejects the call before dispatch
+
+#### Scenario: Unknown declared capability does not reject a target
+- **WHEN** an enabled registered agent has unknown tool or skill names
+- **THEN** those names alone do not cause create-target validation to reject the agent
 
 ### Requirement: Blocking interactions and reusable sessions
 The tool SHALL block until every dispatched interaction is terminal. A child SHALL receive one prompt per task interaction, but its durable conversation SHALL remain available to later calls. V1 SHALL not expose individual mid-interaction steer, status, cancel, or revive operations.

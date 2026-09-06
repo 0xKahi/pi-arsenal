@@ -12,6 +12,7 @@ skills: []
 metadata:
   - "Lane: Bounded implementation and executioner"
   - "Role: Fast execution specialist for well-defined tasks"
+  - "Permissions: read_files, write_files"
   - "Stats: 2x faster code edits, 1/2 cost of orchestrator"
   - "Weakness: design, taste"
   - "Constraints: Execution-focused — no research, no architectural decisions"

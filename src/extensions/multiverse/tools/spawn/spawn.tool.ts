@@ -18,7 +18,7 @@ const PARTIAL_RECEIPT = 'Spawn dispatched; waiting for every task to settle.';
 
 export interface SpawnToolHost {
   /** The tool is only callable while this returns dependencies; Default parents and children return undefined. */
-  resolve: (ctx: ExtensionContext) => SpawnOrchestratorDependencies | { error: string } | undefined;
+  getExecutionContext: (ctx: ExtensionContext) => SpawnOrchestratorDependencies | { error: string } | undefined;
   availableAgents: () => Iterable<string>;
   appendManifest?: ManifestSink;
   run?: typeof runSpawn;
@@ -42,9 +42,9 @@ export function createSpawnTool(host: SpawnToolHost): ToolDefinition<typeof spaw
     ],
     parameters: spawnParameters,
     async execute(_toolCallId, params, signal, onUpdate, ctx): Promise<AgentToolResult<SpawnToolDetails>> {
-      const host_ = host.resolve(ctx);
-      if (!host_) throw new Error('spawn is only available to an eligible Megamind parent session.');
-      if ('error' in host_) throw new Error(host_.error);
+      const execution = host.getExecutionContext(ctx);
+      if (!execution) throw new Error('spawn is only available to an eligible Megamind parent session.');
+      if ('error' in execution) throw new Error(execution.error);
 
       // Preflight: reject before dispatch so a bad call leaves no children and no manifest.
       const input: SpawnInput = validateSpawnInput(params, { availableAgents: host.availableAgents() });
@@ -55,7 +55,7 @@ export function createSpawnTool(host: SpawnToolHost): ToolDefinition<typeof spaw
 
       let run: SpawnRunResult;
       try {
-        run = await (host.run ?? runSpawn)(input, host_, {
+        run = await (host.run ?? runSpawn)(input, execution, {
           signal,
           // Partial updates land in model context, so `content` stays a fixed receipt and all
           // live per-task progress goes to `details`, which the model never sees.

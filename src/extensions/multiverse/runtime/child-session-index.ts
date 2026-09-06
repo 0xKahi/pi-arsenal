@@ -2,12 +2,11 @@ import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from
 import path from 'node:path';
 import { SessionManager } from '@earendil-works/pi-coding-agent';
 import { SubagentIdentityHandler } from '../agents/session-identity.ts';
-import type { BundledSubagentName } from '../agents/subagent-definition.ts';
 import { CHILD_SESSION_INDEX_FILE as INDEX_FILE, CHILD_SESSION_INDEX_VERSION as INDEX_VERSION } from '../constants.ts';
 
 interface ChildSessionIndexEntry {
   fileName: string;
-  agent: BundledSubagentName;
+  agent: string;
   parentSessionId: string;
 }
 
@@ -26,7 +25,7 @@ export function resolveIndexedChildSession(sessionDirectory: string, childSessio
 
 export function recordIndexedChildSession(
   sessionDirectory: string,
-  input: { childSessionId: string; sessionFile: string; agent: BundledSubagentName; parentSessionId: string },
+  input: { childSessionId: string; sessionFile: string; agent: string; parentSessionId: string },
 ): void {
   const index = readIndex(sessionDirectory) ?? emptyIndex();
   index.sessions[input.childSessionId] = {

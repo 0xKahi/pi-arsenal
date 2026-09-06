@@ -16,11 +16,11 @@ const entry = (customType: string, data: unknown, id = customType): SessionEntry
   data,
 });
 
-const disabledConfig: ConfigProvider = {
+const enabledConfig: ConfigProvider = {
   getP2pCouncil: () => ({ enabled: false, layout: 'inline' }),
   getTmuxPopup: () => ({ enabled: false, width: 50, height: 50, fileCommand: 'nvim' }),
   getMultiverse: () => ({
-    enabled: false,
+    enabled: true,
     defaultAgent: 'default',
     maxConcurrency: 5,
     subagents: { explorer: { enabled: true }, fixer: { enabled: true }, visualizer: { enabled: true } },
@@ -40,7 +40,7 @@ const setup = () => {
     setActiveTools: () => {},
   } as unknown as ExtensionAPI;
   const roleState = new SessionRoleState();
-  registerMultiverse(pi, { config: disabledConfig, roleState });
+  registerMultiverse(pi, { config: enabledConfig, roleState });
   const handler = handlers[0];
   if (!handler) throw new Error('session_start handler was not registered');
   return { handler, roleState };
@@ -61,7 +61,7 @@ describe('Multiverse session role classification', () => {
     expect(roleState.get()).toEqual({ kind: 'parent' });
   });
 
-  it('recognizes a marked child even while orchestration is disabled', () => {
+  it('recognizes a marked child while Multiverse is enabled', () => {
     const { handler, roleState } = setup();
     const entries = [
       entry('arsenal-parent-agent', { version: 1, agent: 'megamind' }),

@@ -134,23 +134,22 @@ export class ConfigLoader implements ConfigProvider {
       multiverse: {
         ...base.multiverse,
         ...override.multiverse,
-        subagents: {
-          explorer: {
-            ...base.multiverse.subagents.explorer,
-            ...override.multiverse?.subagents?.explorer,
-            model: ConfigLoader.mergeOptionalModel(base.multiverse.subagents.explorer.model, override.multiverse?.subagents?.explorer?.model),
-          },
-          fixer: {
-            ...base.multiverse.subagents.fixer,
-            ...override.multiverse?.subagents?.fixer,
-            model: ConfigLoader.mergeOptionalModel(base.multiverse.subagents.fixer.model, override.multiverse?.subagents?.fixer?.model),
-          },
-          visualizer: {
-            ...base.multiverse.subagents.visualizer,
-            ...override.multiverse?.subagents?.visualizer,
-            model: ConfigLoader.mergeOptionalModel(base.multiverse.subagents.visualizer.model, override.multiverse?.subagents?.visualizer?.model),
-          },
-        },
+        subagents: Object.fromEntries(
+          [...new Set([...Object.keys(base.multiverse.subagents), ...Object.keys(override.multiverse?.subagents ?? {})])].map(name => {
+            const current = Object.hasOwn(base.multiverse.subagents, name) ? base.multiverse.subagents[name] : undefined;
+            const patch =
+              override.multiverse?.subagents && Object.hasOwn(override.multiverse.subagents, name) ? override.multiverse.subagents[name] : undefined;
+            return [
+              name,
+              {
+                enabled: true,
+                ...current,
+                ...patch,
+                model: ConfigLoader.mergeOptionalModel(current?.model, patch?.model),
+              },
+            ];
+          }),
+        ),
       },
     };
   }

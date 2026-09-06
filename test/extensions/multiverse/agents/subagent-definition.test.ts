@@ -2,131 +2,72 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { BUNDLED_SUBAGENT_PROMPTS_DIRECTORY, loadSubagentDefinitions } from '../../../../src/extensions/multiverse/agents/subagent-definition.ts';
+import { loadSubagentDefinition } from '../../../../src/extensions/multiverse/agents/subagent-definition.ts';
+import { discoverSubagentPaths, SUBAGENT_PROMPTS_DIRECTORY } from '../../../../src/extensions/multiverse/agents/subagent-paths.ts';
 
-const definition = (name: string, options: { tools?: string[]; skills?: string[]; body?: string } = {}) => `---
-name: ${name}
-tools: ${JSON.stringify(options.tools ?? ['read'])}
-skills: ${JSON.stringify(options.skills ?? [])}
-metadata:
-  - "Lane: ${name} lane"
----
-${options.body ?? `${name} prompt`}
-`;
+export const definitionSource = (name: string, tools = ['read'], skills: string[] = [], prompt = `${name} prompt`) =>
+  `---\nname: ${name}\ntools: ${JSON.stringify(tools)}\nskills: ${JSON.stringify(skills)}\nmetadata: ["Lane: ${name}"]\n---\n${prompt}\n`;
 
-describe('bundled Multiverse definitions', () => {
-  it('ships the maintainer-supplied three-agent roster with empty skill lists', () => {
-    const result = loadSubagentDefinitions({
-      directory: BUNDLED_SUBAGENT_PROMPTS_DIRECTORY,
-      availableTools: ['read', 'grep', 'find', 'ls', 'bash', 'edit', 'write'],
-      availableSkills: [],
-    });
-
-    expect(result.errors).toEqual([]);
-    expect([...result.definitions.keys()]).toEqual(['explorer', 'fixer', 'visualizer']);
-    expect(result.definitions.get('explorer')?.tools).toEqual(['read', 'grep', 'find', 'ls', 'bash']);
-    expect(result.definitions.get('fixer')?.tools).toEqual(['read', 'bash', 'edit', 'write', 'grep', 'find', 'ls']);
-    expect(result.definitions.get('visualizer')?.tools).toEqual(['read', 'grep', 'ls', 'find', 'bash']);
-    for (const definition of result.definitions.values()) expect(definition.skills).toEqual([]);
-    expect(result.definitions.get('visualizer')?.prompt.endsWith('`;')).toBe(false);
-  });
-});
-
-describe('loadSubagentDefinitions', () => {
+describe('loadSubagentDefinition', () => {
   let directory: string;
-
   beforeEach(() => {
-    directory = mkdtempSync(path.join(tmpdir(), 'pi-arsenal-subagents-'));
+    directory = mkdtempSync(path.join(tmpdir(), 'arsenal-definition-'));
+  });
+  afterEach(() => rmSync(directory, { recursive: true, force: true }));
+  const load = (source: string) => {
+    const filePath = path.join(directory, 'anything.md');
+    writeFileSync(filePath, source);
+    return loadSubagentDefinition(filePath);
+  };
+
+  it('accepts arbitrary names independent of filenames and runtime capabilities', () => {
+    const result = load(definitionSource('researcher', ['read', 'missing'], ['unknown']));
+    expect(result).toMatchObject({ status: 'success', data: { name: 'researcher', tools: ['read', 'missing'], skills: ['unknown'] } });
+    expect(result.filePath).toBe(path.join(directory, 'anything.md'));
   });
 
-  afterEach(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
-
-  const write = (name: string, content: string) => writeFileSync(path.join(directory, name), content);
-  const load = () =>
-    loadSubagentDefinitions({
-      directory,
-      availableTools: ['read', 'edit'],
-      availableSkills: ['search'],
-    });
-
-  it('loads the three valid bundled definitions', () => {
-    write('explorer.md', definition('explorer', { tools: ['read'], skills: ['search'], body: 'Explore carefully.' }));
-    write('fixer.md', definition('fixer', { tools: ['read', 'edit'], body: 'Fix narrowly.' }));
-    write('visualizer.md', definition('visualizer', { tools: ['read'], body: 'Inspect visuals.' }));
-
-    const result = load();
-
-    expect(result.errors).toEqual([]);
-    expect([...result.definitions.keys()]).toEqual(['explorer', 'fixer', 'visualizer']);
-    expect(result.definitions.get('explorer')).toMatchObject({
-      name: 'explorer',
-      tools: ['read'],
-      skills: ['search'],
-      prompt: 'Explore carefully.',
+  it('normalizes duplicate tools and skills in first-occurrence order', () => {
+    expect(load(definitionSource('agent', ['read', 'bash', 'read'], ['a', 'a', 'b']))).toMatchObject({
+      status: 'success',
+      data: { tools: ['read', 'bash'], skills: ['a', 'b'] },
     });
   });
 
-  it('identifies malformed frontmatter by file', () => {
-    write('explorer.md', '---\nname: [broken\n---\nprompt');
-    write('fixer.md', definition('fixer'));
-
-    const result = load();
-
-    expect(result.definitions.has('explorer')).toBe(false);
-    expect(result.errors.join('\n')).toContain('explorer.md');
-    expect(result.errors.join('\n')).toContain('frontmatter');
+  it.each([
+    'no frontmatter',
+    '---\nname: [broken\n---\nprompt',
+    '---\nname: agent\ntools: [read]\n---\nprompt',
+    definitionSource('agent', ['read'], [], '  '),
+    definitionSource('agent').replace('metadata: ["Lane: agent"]', 'metadata: []'),
+    definitionSource('agent').replace('tools: ["read"]', 'tools: read'),
+    definitionSource('agent').replace('name: agent', 'name: "   "'),
+  ])('rejects invalid structure with a file-specific error: %s', source => {
+    const result = load(source);
+    expect(result.status).toBe('error');
+    if (result.status === 'error') expect(result.error).toContain(result.filePath);
   });
 
-  it('rejects a declared name that does not match its filename', () => {
-    write('explorer.md', definition('fixer'));
-    write('fixer.md', definition('fixer'));
-
-    const result = load();
-
-    expect(result.errors.join('\n')).toContain('does not match filename "explorer"');
+  it('reports unreadable files', () => {
+    const result = loadSubagentDefinition(path.join(directory, 'missing.md'));
+    expect(result.status).toBe('error');
+    if (result.status === 'error') expect(result.error).toContain('missing.md');
   });
 
-  it('rejects missing required fields', () => {
-    write('explorer.md', '---\nname: explorer\ntools: [read]\n---\nprompt');
-    write('fixer.md', definition('fixer'));
-
-    const result = load();
-
-    expect(result.errors.join('\n')).toContain('explorer.md');
-    expect(result.errors.join('\n')).toContain('skills');
+  it('loads the shipped initial roster with empty skills', () => {
+    const discovered = discoverSubagentPaths(SUBAGENT_PROMPTS_DIRECTORY);
+    expect(discovered.errors).toEqual([]);
+    const results = discovered.paths.map(loadSubagentDefinition);
+    expect(results.every(result => result.status === 'success')).toBe(true);
+    const definitions = results.flatMap(result => (result.status === 'success' ? [result.data] : []));
+    expect(definitions.map(agent => agent.name)).toEqual(['explorer', 'fixer', 'visualizer']);
+    for (const agent of definitions) expect(agent.skills).toEqual([]);
+    expect(definitions.find(agent => agent.name === 'visualizer')?.prompt.endsWith('`;')).toBe(false);
   });
 
-  it('rejects unknown tools and skills', () => {
-    write('explorer.md', definition('explorer', { tools: ['bash'], skills: ['missing'] }));
-    write('fixer.md', definition('fixer'));
-
-    const result = load();
-
-    expect(result.errors.join('\n')).toContain('tool:bash');
-    expect(result.errors.join('\n')).toContain('skill:missing');
-  });
-
-  it('rejects an empty prompt body', () => {
-    write('explorer.md', definition('explorer', { body: '   ' }));
-    write('fixer.md', definition('fixer'));
-
-    const result = load();
-
-    expect(result.errors.join('\n')).toContain('explorer.md');
-    expect(result.errors.join('\n')).toContain('must not be empty');
-  });
-
-  it('reports missing and unsupported definition files', () => {
-    write('custom.md', definition('custom'));
-    write('fixer.md', definition('fixer'));
-
-    const result = load();
-
-    expect(result.errors.join('\n')).toContain('custom.md');
-    expect(result.errors.join('\n')).toContain('unsupported bundled subagent');
-    expect(result.errors.join('\n')).toContain('explorer.md');
-    expect(result.errors.join('\n')).toContain('definition is missing');
+  it('discovers markdown paths without requiring known filenames', () => {
+    writeFileSync(path.join(directory, 'new-agent.md'), definitionSource('custom'));
+    writeFileSync(path.join(directory, 'ignored.txt'), 'not a definition');
+    expect(discoverSubagentPaths(directory)).toEqual({ paths: [path.join(directory, 'new-agent.md')], errors: [] });
+    expect(discoverSubagentPaths(path.join(directory, 'missing')).errors).toHaveLength(1);
   });
 });

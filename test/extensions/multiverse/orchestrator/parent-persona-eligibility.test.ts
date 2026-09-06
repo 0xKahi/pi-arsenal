@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import type { ExtensionAPI, ExtensionContext, SessionEntry } from '@earendil-works/pi-coding-agent';
 import type { ConfigProvider } from '../../../../src/config/config-loader.ts';
-import { BUNDLED_SUBAGENT_PROMPTS_DIRECTORY } from '../../../../src/extensions/multiverse/agents/subagent-definition.ts';
 import { registerMultiverse } from '../../../../src/extensions/multiverse/multiverse.extension.ts';
-import { resolveMegamindEligibility } from '../../../../src/extensions/multiverse/orchestrator/megamind.ts';
 import { PARENT_AGENT_CUSTOM_TYPE } from '../../../../src/extensions/multiverse/orchestrator/parent-agent.ts';
 import { MultiverseConfigSchema } from '../../../../src/schemas/multiverse.config.schema.ts';
 
@@ -47,7 +45,6 @@ const setup = (initialEnabled: boolean, enabledRoster = true) => {
   } as unknown as ExtensionContext;
   const activation = registerMultiverse(pi, {
     config,
-    megamindPromptIntro: () => 'fixture intro',
   });
   const start = () => handlers.get('session_start')?.[0]?.({ type: 'session_start', reason: 'startup' } as never, ctx);
   const beforeAgentStart = (systemPrompt: string) =>
@@ -60,9 +57,8 @@ describe('parent persona eligibility', () => {
     const runtime = setup(false);
 
     runtime.start();
-    expect(runtime.activation.parentAgentState.getPreferred()).toBe('megamind');
     expect(runtime.activation.parentAgentState.getActive()).toBe('default');
-    expect(runtime.notifications.join('\n')).toContain('Multiverse is disabled');
+    expect(runtime.notifications).toEqual([]);
 
     runtime.setEnabled(true);
     runtime.start();
@@ -79,18 +75,6 @@ describe('parent persona eligibility', () => {
     expect(runtime.notifications.join('\n')).toContain('No enabled valid Multiverse subagent');
   });
 
-  it('keeps an empty Megamind development placeholder ineligible', () => {
-    const result = resolveMegamindEligibility({
-      config: MultiverseConfigSchema.parse({ enabled: true }),
-      definitionsDirectory: BUNDLED_SUBAGENT_PROMPTS_DIRECTORY,
-      availableTools: ['read', 'grep', 'find', 'ls', 'bash', 'edit', 'write'],
-      availableSkills: [],
-      promptIntro: '',
-    });
-
-    expect(result).toEqual({ eligible: false, reason: 'The Megamind prompt has not been configured.', roster: new Map() });
-  });
-
   it('appends the dynamic Megamind prompt once per turn without accumulating copies', () => {
     const runtime = setup(true);
     runtime.start();
@@ -98,7 +82,7 @@ describe('parent persona eligibility', () => {
 
     const first = runtime.beforeAgentStart('HOST\nPROJECT APPEND');
     expect(first?.systemPrompt).toStartWith('HOST\nPROJECT APPEND');
-    expect(first?.systemPrompt).toContain('fixture intro');
+    expect(first?.systemPrompt).toContain('<Role>');
     expect(first?.systemPrompt).toContain('@explorer');
     expect(first?.systemPrompt).toContain('@fixer');
     expect(first?.systemPrompt).toContain('@visualizer');

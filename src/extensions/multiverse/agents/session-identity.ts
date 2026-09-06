@@ -1,13 +1,12 @@
 import type { SessionEntry, SessionManager } from '@earendil-works/pi-coding-agent';
 import { z } from 'zod';
-import { BUNDLED_SUBAGENT_NAMES, type BundledSubagentName } from './subagent-definition.ts';
 
 export const SUBAGENT_IDENTITY_CUSTOM_TYPE = 'arsenal-subagent';
 export const SUBAGENT_IDENTITY_VERSION = 1 as const;
 
 export interface SubagentIdentity {
   version: typeof SUBAGENT_IDENTITY_VERSION;
-  agent: BundledSubagentName;
+  agent: string;
   parentSessionId: string;
 }
 
@@ -18,7 +17,7 @@ export type SubagentIdentityResult =
 
 const IdentitySchema = z.strictObject({
   version: z.literal(SUBAGENT_IDENTITY_VERSION),
-  agent: z.enum(BUNDLED_SUBAGENT_NAMES),
+  agent: z.string().trim().min(1),
   parentSessionId: z.string().min(1),
 });
 
@@ -51,12 +50,12 @@ export class SubagentIdentityHandler {
     return { kind: 'child', identity: parsed.data, entryId: marker.id };
   }
 
-  static create(agent: BundledSubagentName, parentSessionId: string): SubagentIdentity {
+  static create(agent: string, parentSessionId: string): SubagentIdentity {
     return IdentitySchema.parse({ version: SUBAGENT_IDENTITY_VERSION, agent, parentSessionId });
   }
 
   /** Mark a newly created child through its own SessionManager before any prompt is appended. */
-  static markSession(sessionManager: SessionManager, agent: BundledSubagentName, parentSessionId: string): string {
+  static markSession(sessionManager: SessionManager, agent: string, parentSessionId: string): string {
     const existing = SubagentIdentityHandler.parse(sessionManager.getEntries());
     if (existing.kind !== 'none') {
       throw new Error(

@@ -10,6 +10,7 @@ skills: []
 metadata:
   - "Lane: Visual/media analysis isolated from orchestrator context"
   - "Role: Visual analysis specialist for images, PDFs, and diagrams"
+  - "Permissions: read_files"
   - "Stats: Processes raw files outside your context, returning only structured observations"
   - "Capabilities: Interprets images, screenshots, PDFs, and diagrams; extracts UI elements, layouts, text, relationships"
   - "**Delegate when:** Need to analyze a multimedia file • Extract information from a visual"

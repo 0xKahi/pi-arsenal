@@ -16,7 +16,7 @@ The system SHALL provide `megamind` as an orchestration-focused parent persona a
 - **THEN** its next turn receives no Megamind contribution and the batch tool is inactive
 
 ### Requirement: Megamind prompt reflects the live roster
-The Megamind prompt SHALL be assembled at runtime from subagents that are currently enabled and successfully loaded. It SHALL NOT advertise disabled or invalid targets.
+The Megamind contribution SHALL be assembled before each applicable agent run from the enabled, registered in-memory roster without reloading definitions or resolving availability again. It SHALL NOT advertise disabled or invalid targets. Unknown tool or skill names SHALL NOT alone exclude an agent. The prompt SHALL describe the configured concurrency and batch limit accurately, and roster entries SHALL use names and parent-facing metadata rather than child prompt bodies or generated tool lists.
 
 #### Scenario: Roster changes
 - **WHEN** the enabled valid roster differs between sessions
@@ -25,6 +25,17 @@ The Megamind prompt SHALL be assembled at runtime from subagents that are curren
 #### Scenario: No usable subagent
 - **WHEN** no subagent definition is enabled and valid
 - **THEN** Megamind falls back to Default, the batch tool remains inactive, and the user is informed
+
+### Requirement: Resolved activation is reused
+Before each agent run, Multiverse SHALL build/apply prompt policy using the resolved registry and current configuration, without reapplying active tools or repeating availability diagnostics. Explicit persona switching is deferred to the future Pi command; this cleanup SHALL retain session-start restoration without adding pending-persona or turn-boundary switching state.
+
+#### Scenario: Repeated turns reuse activation
+- **WHEN** a Megamind parent processes multiple prompts without reactivation
+- **THEN** each receives a newly built contribution from the same in-memory roster without repeated availability warnings or Multiverse tool-set mutations
+
+#### Scenario: Current prompt configuration
+- **WHEN** the configuration provider reports a different concurrency value before a Megamind turn
+- **THEN** the prompt reflects that value without requiring a cloned configuration or cached prompt
 
 ### Requirement: Parent prompt is appended
 Megamind content SHALL be appended to the host's current parent system prompt rather than replacing it. It SHALL preserve host, user, project, and other-extension prompt contributions and SHALL appear exactly once per applicable turn.
@@ -38,7 +49,7 @@ Megamind content SHALL be appended to the host's current parent system prompt ra
 - **THEN** each turn contains one Megamind contribution
 
 ### Requirement: Parent-agent selection is durable and append-only
-Each explicit parent-agent switch SHALL append an `arsenal-parent-agent` custom entry naming `default` or `megamind`. On a parent session start or reload, the system SHALL restore the last physically recorded syntactically valid selection in the session file, irrespective of the active conversation branch. When no selection entry exists, the configured `defaultAgent` SHALL apply. If the selected persona is not currently eligible because Multiverse is disabled or no subagent is available, the runtime SHALL fall back to Default and notify the user without rewriting the recorded preference.
+Each explicit parent-agent switch SHALL append an `arsenal-parent-agent` custom entry naming `default` or `megamind`. On a parent session start or reload, the system SHALL restore the last physically recorded syntactically valid selection in the session file, irrespective of the active conversation branch. When no selection entry exists, the configured `defaultAgent` SHALL apply. When enabled Multiverse has no available subagent, the runtime SHALL fall back to Default and notify the user without rewriting the recorded preference. When Multiverse is disabled, activation SHALL use Default without restoring preferences, issuing roster diagnostics, or rewriting saved entries. Explicit switching is deferred to the future Pi command.
 
 #### Scenario: Switch to Megamind persists
 - **WHEN** the user switches a parent session to Megamind and later reopens it
@@ -53,10 +64,15 @@ Each explicit parent-agent switch SHALL append an `arsenal-parent-agent` custom 
 - **THEN** the configured default parent persona is used when eligible, otherwise Default is used with a notice
 
 #### Scenario: Recorded Megamind currently unavailable
-- **WHEN** the latest recorded selection is Megamind but Multiverse is disabled or no subagent is available
+- **WHEN** the latest recorded selection is Megamind but no subagent is available in enabled Multiverse
 - **THEN** the runtime uses Default, preserves the recorded preference for a future eligible reopen, and informs the user
 
+#### Scenario: Disabled preference remains stored
+- **WHEN** Multiverse is disabled in a session with a recorded Megamind preference
+- **THEN** it uses Default without restoring or rewriting that preference and without issuing a roster warning
+
 ### Requirement: Parent prompt and tool switch together
+Implementation of the switching command and its transition handling is deferred beyond this cleanup; the following is the contract for that future work.
 Selecting Megamind SHALL append its prompt and activate the batch tool from the next turn. Selecting Default SHALL remove the contribution and deactivate the tool from the next turn. A running turn SHALL retain the persona with which it started.
 
 #### Scenario: Switching to Megamind
@@ -68,12 +84,12 @@ Selecting Megamind SHALL append its prompt and activate the batch tool from the 
 - **THEN** the following turn has neither the Megamind contribution nor active batch tool
 
 ### Requirement: Child identity overrides parent selection
-A session containing a valid `arsenal-subagent` identity SHALL be treated exclusively as a child. Parent-agent entries SHALL be ignored there, parent-agent switching SHALL be rejected, Megamind SHALL not be injected, and the batch tool SHALL remain inactive.
+While Multiverse is enabled, a session containing a valid `arsenal-subagent` identity SHALL be treated exclusively as a child. Parent-agent entries SHALL be ignored there, parent-agent switching SHALL be rejected, Megamind SHALL not be injected, and the batch tool SHALL remain inactive.
 
 #### Scenario: Parent switch attempted in a child
-- **WHEN** the user attempts to select Default or Megamind while a child session is open
+- **WHEN** Multiverse is enabled and the user attempts to select Default or Megamind while a child session is open
 - **THEN** the switch is rejected and the child role remains active
 
 #### Scenario: Child contains historical parent entry
-- **WHEN** a child session contains a parent-agent entry
+- **WHEN** Multiverse is enabled and a child session contains a parent-agent entry
 - **THEN** its child identity remains authoritative and the parent entry has no effect

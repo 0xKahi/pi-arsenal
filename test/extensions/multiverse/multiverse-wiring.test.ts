@@ -31,33 +31,32 @@ const setup = (initialEntries: SessionEntry[] = [], persona: 'default' | 'megami
     appendEntry: (customType: string, data: unknown) => entries.push(customEntry(customType, data)),
     setActiveTools: (names: string[]) => (activeTools = names),
     getActiveTools: () => activeTools,
-    getAllTools: () => ['read', 'grep', 'find', 'ls', 'bash', 'edit', 'write'].map(name => ({ name })),
+    getAllTools: () => ['read', 'grep', 'find', 'ls', 'bash', 'edit', 'write', 'spawn'].map(name => ({ name })),
     getCommands: () => [],
   } as unknown as ExtensionAPI;
 
   const config: ConfigProvider = {
     getP2pCouncil: () => ({ enabled: false, layout: 'inline' }),
     getTmuxPopup: () => ({ enabled: false, width: 50, height: 50, fileCommand: 'nvim' }),
-    getMultiverse: () => MultiverseConfigSchema.parse({ enabled: true }),
+    getMultiverse: () => MultiverseConfigSchema.parse({ enabled: true, defaultAgent: persona }),
   };
 
   const notifications: string[] = [];
   const ctx = {
+    isIdle: () => true,
     cwd: '/tmp/project',
     model: { provider: 'anthropic', id: 'model' },
     modelRegistry: {},
-    sessionManager: { getEntries: () => entries, getSessionId: () => 'parent-1' },
+    sessionManager: { getEntries: () => entries, getBranch: () => entries, getSessionId: () => 'parent-1' },
     ui: { notify: (message: string) => notifications.push(message) },
   } as unknown as ExtensionContext;
 
   const activation = registerMultiverse(pi, {
     config,
-    megamindPromptIntro: () => 'fixture intro',
-    // Only the persistence and switching wiring is under test; no child is really dispatched.
+    // Only manifest/activation wiring is under test; no child is really dispatched.
     spawnRun: async () => ({ interactions: [childInteraction({ body: 'child output' })], progress: new SpawnProgress([]), aborted: false }),
   });
   handlers.get('session_start')?.[0]?.({ type: 'session_start', reason: 'startup' } as never, ctx);
-  if (persona === 'megamind') activation.selectParentAgent('megamind', ctx);
 
   return { activation, entries, ctx, tools, renderers, notifications, activeTools: () => activeTools };
 };
@@ -89,31 +88,14 @@ describe('spawn manifest persistence', () => {
   });
 });
 
-describe('parent agent switching', () => {
-  it('persists a switch from a parent session and applies it to the active persona and tools', () => {
-    const runtime = setup();
-
-    expect(runtime.activation.selectParentAgent('megamind', runtime.ctx)).toEqual({ ok: true });
-
+describe('parent agent restoration', () => {
+  it('restores a saved preference without appending another entry', () => {
+    const selection = customEntry(PARENT_AGENT_CUSTOM_TYPE, { version: 1, agent: 'megamind' });
+    const runtime = setup([selection]);
     expect(runtime.activation.parentAgentState.getPreferred()).toBe('megamind');
     expect(runtime.activation.parentAgentState.getActive()).toBe('megamind');
     expect(runtime.activeTools()).toContain('spawn');
-    const persisted = runtime.entries.filter(entry => entry.type === 'custom' && entry.customType === PARENT_AGENT_CUSTOM_TYPE);
-    expect(persisted).toHaveLength(1);
-    expect(persisted[0]?.type === 'custom' ? persisted[0].data : undefined).toEqual({ version: 1, agent: 'megamind' });
-  });
-
-  it('refuses a switch inside a child session and leaves its identity, prompt, and tools untouched', () => {
-    const runtime = setup([childIdentityEntry]);
-    const toolsBefore = [...runtime.activeTools()];
-
-    const result = runtime.activation.selectParentAgent('megamind', runtime.ctx);
-
-    expect(result).toEqual({ ok: false, error: 'Parent agents cannot be switched inside a subagent session.' });
-    expect(runtime.entries.some(entry => entry.type === 'custom' && entry.customType === PARENT_AGENT_CUSTOM_TYPE)).toBe(false);
-    expect(runtime.activation.roleState.get()).toEqual({ kind: 'child', identity: { version: 1, agent: 'fixer', parentSessionId: 'parent-1' } });
-    expect(runtime.activation.parentAgentState.getActive()).toBe('default');
-    expect(runtime.activeTools()).toEqual(toolsBefore);
+    expect(runtime.entries).toEqual([selection]);
   });
 
   it('ignores parent-agent entries that exist inside a child session', () => {

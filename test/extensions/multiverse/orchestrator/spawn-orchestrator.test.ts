@@ -63,7 +63,7 @@ const makeDependencies = (
     registry: { find: () => model, getApiKeyAndHeaders: async () => ({ ok: true }) },
     subagentModel: () => undefined,
     subagentReasoning: () => undefined,
-    resolveSubagent: () => ({ success: true, definition }),
+    getSubAgent: () => ({ enabled: true, agent: definition }),
     resolveContinuation: () => childInteraction({ checkpointAfter: 'prior-leaf' }),
     hydrate: (async input => {
       active++;
@@ -182,11 +182,11 @@ describe('runSpawn', () => {
 
     const result = await runSpawn(
       { context: 'shared context', tasks: [{ action: 'create', agent: 'fixer', task: 'x' }] },
-      makeDependencies(state, { resolveSubagent: () => ({ success: false, error: 'Subagent "fixer" is currently disabled.' }) }),
+      makeDependencies(state, { getSubAgent: () => ({ enabled: false, agent: definition }) }),
     );
 
     expect(state.created).toEqual([]);
-    expect(result.interactions[0]).toMatchObject({ status: 'failure', error: 'Subagent "fixer" is currently disabled.' });
+    expect(result.interactions[0]).toMatchObject({ status: 'failure', error: 'Subagent "fixer" is disabled.' });
   });
 
   it('fails a task whose model cannot be resolved instead of falling back silently', async () => {

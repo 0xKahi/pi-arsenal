@@ -11,7 +11,7 @@ const dependencies = {} as SpawnOrchestratorDependencies;
 const validInput = { context: 'shared context', tasks: [{ action: 'create', agent: 'fixer', task: 'implement' }] };
 
 const host = (overrides: Partial<SpawnToolHost> = {}): SpawnToolHost => ({
-  resolve: () => dependencies,
+  getExecutionContext: () => dependencies,
   availableAgents: () => ['fixer'],
   run: async () => ({ interactions: [childInteraction({ body: 'child output' })], progress: new SpawnProgress([]), aborted: false }),
   ...overrides,
@@ -43,13 +43,13 @@ describe('createSpawnTool', () => {
   });
 
   it('is unavailable outside an eligible Megamind parent session', async () => {
-    const tool = createSpawnTool(host({ resolve: () => undefined }));
+    const tool = createSpawnTool(host({ getExecutionContext: () => undefined }));
 
     await expect(tool.execute('call-1', validInput as never, undefined, undefined, ctx)).rejects.toThrow('eligible Megamind parent');
   });
 
   it('surfaces the reason when the roster became unusable', async () => {
-    const tool = createSpawnTool(host({ resolve: () => ({ error: 'spawn is unavailable: Multiverse is disabled.' }) }));
+    const tool = createSpawnTool(host({ getExecutionContext: () => ({ error: 'spawn is unavailable: Multiverse is disabled.' }) }));
 
     await expect(tool.execute('call-1', validInput as never, undefined, undefined, ctx)).rejects.toThrow('Multiverse is disabled');
   });

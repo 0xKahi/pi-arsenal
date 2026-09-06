@@ -1,5 +1,4 @@
 import { Type } from 'typebox';
-import { BUNDLED_SUBAGENT_NAMES, type BundledSubagentName } from '../../agents/subagent-definition.ts';
 
 /**
  * Hard ceiling on tasks in one call, matching the configurable concurrency maximum.
@@ -13,10 +12,7 @@ export const MAX_SPAWN_TASKS = 10;
 const createTask = Type.Object(
   {
     action: Type.Literal('create'),
-    agent: Type.Union(
-      BUNDLED_SUBAGENT_NAMES.map(name => Type.Literal(name)),
-      { description: 'Subagent that runs this task.' },
-    ),
+    agent: Type.String({ minLength: 1, description: 'Enabled subagent name from the current roster.' }),
     task: Type.String({ minLength: 1, description: 'Task-specific instructions for this child.' }),
   },
   { additionalProperties: false },
@@ -43,7 +39,7 @@ export const spawnParameters = Type.Object(
   { additionalProperties: false },
 );
 
-export type SpawnCreateTask = { action: 'create'; agent: BundledSubagentName; task: string };
+export type SpawnCreateTask = { action: 'create'; agent: string; task: string };
 export type SpawnContinueTask = { action: 'continue'; childSessionId: string; task: string };
 export type SpawnTask = SpawnCreateTask | SpawnContinueTask;
 
@@ -89,7 +85,7 @@ export function validateSpawnInput(input: unknown, options: SpawnValidationOptio
         continue;
       }
       rejectUnknownFields(task, 'create', ['action', 'agent', 'task'], index, failures);
-      tasks.push({ action: 'create', agent: task.agent as BundledSubagentName, task: task.task });
+      tasks.push({ action: 'create', agent: task.agent, task: task.task });
       continue;
     }
     if (task.action === 'continue') {

@@ -174,12 +174,43 @@ describe('ConfigLoader', () => {
     if (!result.success) return;
     expect(result.config.multiverse.enabled).toBe(true);
     expect(result.config.multiverse.maxConcurrency).toBe(7);
-    expect(result.config.multiverse.subagents.explorer.model).toEqual({
+    expect(result.config.multiverse.subagents.explorer?.model).toEqual({
       provider: 'openai',
       modelId: 'two',
       reasoning: 'high',
     });
-    expect(result.config.multiverse.subagents.fixer.enabled).toBe(true);
+    expect(result.config.multiverse.subagents.fixer?.enabled).toBe(true);
+  });
+
+  it('merges arbitrary agent names without treating configuration as registration', () => {
+    writeFileSync(
+      globalPath,
+      JSON.stringify({
+        multiverse: {
+          enabled: true,
+          subagents: {
+            researcher: { enabled: false, model: { provider: 'custom', modelId: 'old' } },
+          },
+        },
+      }),
+    );
+    writeFileSync(
+      projectPath,
+      JSON.stringify({
+        multiverse: {
+          subagents: {
+            researcher: { model: { modelId: 'new' } },
+            reviewer: { model: { reasoning: 'low' } },
+          },
+        },
+      }),
+    );
+    const result = ConfigLoader.load(createCtx(true, tmpDir), createResolver(globalPath, projectPath));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.config.multiverse.subagents.researcher).toEqual({ enabled: false, model: { provider: 'custom', modelId: 'new' } });
+    expect(result.config.multiverse.subagents.reviewer).toEqual({ enabled: true, model: { reasoning: 'low' } });
+    expect(result.warnings).toEqual([]);
   });
 
   it.each([0, 11, 1.5])('isolates an invalid Multiverse concurrency value %p', maxConcurrency => {

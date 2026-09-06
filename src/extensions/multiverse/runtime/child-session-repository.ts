@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { SessionManager } from '@earendil-works/pi-coding-agent';
 import { SubagentIdentityHandler } from '../agents/session-identity.ts';
-import type { BundledSubagentName } from '../agents/subagent-definition.ts';
 import { rebuildChildSessionIndex, recordIndexedChildSession, resolveIndexedChildSession } from './child-session-index.ts';
 import { assertSafeSessionId, resolveChildSessionDirectory, SUBAGENT_SESSIONS_ROOT } from './child-storage.util.ts';
 
@@ -32,7 +31,7 @@ export class ChildSessionRepository {
     this.createId = options.createId ?? randomUUID;
   }
 
-  create(cwd: string, parentSessionId: string, agent: BundledSubagentName): ChildSessionHandle {
+  create(cwd: string, parentSessionId: string, agent: string): ChildSessionHandle {
     const sessionId = this.createId();
     assertSafeSessionId(sessionId, 'child');
     const sessionDirectory = resolveChildSessionDirectory(cwd, parentSessionId, this.root);

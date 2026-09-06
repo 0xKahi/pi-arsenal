@@ -16,7 +16,7 @@ Every created child SHALL use a persistent Pi JSONL session stored under `~/.ars
 - **THEN** their child files are organized under distinct parent-session groups
 
 ### Requirement: Runtime hydration per interaction
-For each interaction, the system SHALL open the selected child session and checkpoint, construct a fresh AgentSession with the current child definition and environment, run the prompt, persist the resulting checkpoint, and dispose the runtime on every terminal path. The logical child session SHALL not be deleted by disposal.
+For each interaction, the system SHALL open the selected child session and checkpoint, construct a fresh AgentSession with the definition resolved from the active registry and the current runtime environment, run the prompt, persist the resulting checkpoint, and dispose the runtime on every terminal path. The logical child session SHALL not be deleted by disposal.
 
 #### Scenario: Continue after process restart
 - **WHEN** a parent later continues a persisted child and no runtime is resident
@@ -25,6 +25,17 @@ For each interaction, the system SHALL open the selected child session and check
 #### Scenario: Disposal on failure or abort
 - **WHEN** an interaction fails or is aborted
 - **THEN** any created runtime is disposed while the child transcript remains recoverable
+
+### Requirement: Execution context remains current
+A spawn call SHALL use the current parent session, selected model, thinking level, and active-branch child references rather than values frozen at extension load or session start. Definition lookups SHALL reuse the active registry without re-reading files or rebuilding parent prompts. Fresh child extension instances SHALL initialize their own activation state rather than share a process-global registry.
+
+#### Scenario: Model changed since activation
+- **WHEN** a parent changes its model or thinking level before invoking spawn
+- **THEN** the interaction uses those current parent values for fallback resolution
+
+#### Scenario: Branch changed since activation
+- **WHEN** a parent navigates its conversation tree before continuing a child
+- **THEN** continuation eligibility and checkpoint selection use the current active branch
 
 ### Requirement: Parent-branch-aware child checkpoints
 Each completed or aborted child interaction SHALL be correlated with the parent branch by recording the child session ID and latest valid child leaf checkpoint in the branch-scoped parent tool-result details; the manifest MAY duplicate it for recovery. Continuing a child SHALL select its latest referenced checkpoint from tool results on the active parent branch and branch the child conversation from it. A checkpoint is valid when the child session can resolve that entry and build context through it; after an abort this may be the newest persisted aborted entry or, when no new valid entry exists, the prior checkpoint. A child created only on another parent branch SHALL not be implicitly available.
@@ -64,7 +75,7 @@ All batch tasks SHALL share one capacity pool equal to configured `maxConcurrenc
 - **THEN** an eligible queued task starts promptly
 
 ### Requirement: Current extensions load in child runtimes
-A child SHALL rediscover and initialize the user's currently available extensions, including pi-arsenal, rather than snapshotting extension code or inheriting parent extension instances. After extension discovery and before the child's first model turn, pi-arsenal SHALL use the child identity entry to suppress Megamind, apply the current subagent definition, and reassert its current active-tool and skill selections. V1 SHALL not guarantee that an enabled council avoids connecting from a child process or that later dynamic extension changes cannot alter the active set.
+A child SHALL rediscover and initialize the user's currently available extensions, including pi-arsenal, rather than snapshotting extension code or inheriting parent extension instances. During enabled child session activation after extension discovery, pi-arsenal SHALL use the child identity entry to suppress Megamind and apply the loaded subagent definition's registered tool subset. SDK resource loading SHALL preserve V1's empty bundled skill lists. These activation policies SHALL not be imposed by Multiverse on a session opened directly while it is disabled. V1 SHALL not guarantee that an enabled council avoids connecting from a child process or that later dynamic extension changes cannot alter the active set.
 
 #### Scenario: Provider extension remains usable
 - **WHEN** the current environment contains an extension-provided model provider
@@ -116,11 +127,11 @@ Aborting the batch SHALL abort every running interaction, prevent queued tasks f
 - **THEN** completed results survive, running and queued tasks are marked aborted, and no child session is deleted
 
 ### Requirement: Output capping
-Captured child output SHALL be bounded by a threshold sized to stop runaway output rather than to shorten routine reports, so ordinary subagent responses are never reduced. An oversized body SHALL be reduced, marked truncated by an inline marker at its cut point, and accompanied by a notice directing the parent to continue that child session to obtain the remainder or a summary, without changing its execution status. The notice SHALL NOT depend on the child's session file path or checkpoint identifier.
+Captured child output SHALL be bounded by a threshold set far above any legitimate final message, so it fires only on pathological output such as a loop or a file dump and ordinary subagent responses are never reduced. An oversized body SHALL be reduced, marked truncated by an inline marker at its cut point, and accompanied by a notice stating that the output was cut, without changing its execution status. The notice SHALL state the cut as a fact and SHALL NOT direct the parent to any remedy, including continuing the child, nor depend on the child's session file path or checkpoint identifier.
 
 #### Scenario: Successful output truncated
 - **WHEN** a successful child's output exceeds the cap
-- **THEN** it remains successful, carries an inline marker at the cut point, and directs the parent to continue that child session for the remainder
+- **THEN** it remains successful, carries an inline marker at the cut point, and reports the cut without proposing a recovery action
 
 #### Scenario: Routine output is not reduced
 - **WHEN** a child produces ordinary verbose output within the threshold

@@ -1,4 +1,3 @@
-import type { BundledSubagentName } from '../../agents/subagent-definition.ts';
 import { SPAWN_MANIFEST_CUSTOM_TYPE, SPAWN_MANIFEST_VERSION } from '../../constants.ts';
 import type { ChildInteraction, ChildInteractionStatus, ChildTelemetry } from '../../results/child-interaction.types.ts';
 import type { SpawnTask } from './spawn.schema.ts';
@@ -17,7 +16,7 @@ export interface SpawnManifestTask {
   input: SpawnTask;
   /** Absent when the task failed before a child was created. */
   childSessionId?: string;
-  agent?: BundledSubagentName;
+  agent?: string;
   status?: ChildInteractionStatus;
   checkpointBefore?: string | null;
   checkpointAfter?: string | null;

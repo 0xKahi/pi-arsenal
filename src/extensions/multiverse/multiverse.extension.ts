@@ -1,13 +1,13 @@
-import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import type { ConfigProvider } from '../../config/config-loader.ts';
-import { resolveCurrentSubagent } from './agents/current-subagent.ts';
+import { PiToolManager } from '../../utils/pi-tool-manager.util.ts';
 import { SessionRoleState } from './agents/session-role-state.ts';
-import { getAvailableSkillNames } from './agents/skill-policy.ts';
-import { BUNDLED_SUBAGENT_PROMPTS_DIRECTORY, type BundledSubagentName } from './agents/subagent-definition.ts';
-import { resolveMegamindEligibility } from './orchestrator/megamind.ts';
-import { MEGAMIND_PROMPT_INTRO } from './orchestrator/megamind-prompt.ts';
-import { type ParentAgent, ParentAgentState } from './orchestrator/parent-agent.ts';
-import type { runSpawn, SpawnOrchestratorDependencies } from './orchestrator/spawn-orchestrator.ts';
+import type { SubagentDefinition } from './agents/subagent-definition.ts';
+import { discoverSubagentPaths, SUBAGENT_PROMPTS_DIRECTORY } from './agents/subagent-paths.ts';
+import { SubAgentRegistry } from './agents/subagent-registry.ts';
+import { buildMegamindPrompt } from './orchestrator/orchestrator-prompts/megamind.ts';
+import { ParentAgentState } from './orchestrator/parent-agent.ts';
+import type { runSpawn } from './orchestrator/spawn-orchestrator.ts';
 import { latestChildInteraction } from './results/child-interaction-lookup.ts';
 import { ChildAdmissionRegistry } from './runtime/child-admission.ts';
 import { ChildSessionRepository } from './runtime/child-session-repository.ts';
@@ -18,8 +18,6 @@ export interface MultiverseDependencies {
   roleState?: SessionRoleState;
   parentAgentState?: ParentAgentState;
   definitionsDirectory?: string;
-  availableSkills?: () => Iterable<string>;
-  megamindPromptIntro?: () => string;
   repository?: ChildSessionRepository;
   spawnRun?: typeof runSpawn;
 }
@@ -27,8 +25,6 @@ export interface MultiverseDependencies {
 export interface MultiverseActivation {
   roleState: SessionRoleState;
   parentAgentState: ParentAgentState;
-  /** Persona switch for parent sessions. The command and shortcut that call it are added last. */
-  selectParentAgent: (agent: ParentAgent, ctx: ExtensionContext) => { ok: true } | { ok: false; error: string };
 }
 
 export function registerMultiverse(pi: ExtensionAPI, dependencies: MultiverseDependencies): MultiverseActivation {
@@ -36,153 +32,93 @@ export function registerMultiverse(pi: ExtensionAPI, dependencies: MultiverseDep
   const parentAgentState = dependencies.parentAgentState ?? new ParentAgentState();
   const repository = dependencies.repository ?? new ChildSessionRepository();
   const admission = new ChildAdmissionRegistry();
-  const definitionsDirectory = dependencies.definitionsDirectory ?? BUNDLED_SUBAGENT_PROMPTS_DIRECTORY;
+  const subAgents = new SubAgentRegistry();
+  const discovered = discoverSubagentPaths(dependencies.definitionsDirectory ?? SUBAGENT_PROMPTS_DIRECTORY);
+  const definitionErrors = [...discovered.errors, ...subAgents.register(discovered.paths)];
 
-  const environment = () => ({
-    config: dependencies.config.getMultiverse(),
-    definitionsDirectory,
-    availableTools: pi.getAllTools().map(tool => tool.name),
-    availableSkills: dependencies.availableSkills?.() ?? getAvailableSkillNames(pi),
-  });
-
-  const resolveMegamind = () =>
-    resolveMegamindEligibility({ ...environment(), promptIntro: dependencies.megamindPromptIntro?.() ?? MEGAMIND_PROMPT_INTRO });
-  const resolveChild = (name: BundledSubagentName) => resolveCurrentSubagent({ name, ...environment() });
-
-  /** spawn is only callable from a parent session whose active persona is an eligible Megamind. */
-  const resolveSpawnHost = (ctx: ExtensionContext): SpawnOrchestratorDependencies | { error: string } | undefined => {
-    if (roleState.get().kind !== 'parent') return undefined;
-    if (parentAgentState.getActive() !== 'megamind') return undefined;
-    const eligibility = resolveMegamind();
-    if (!eligibility.eligible) return { error: `spawn is unavailable: ${eligibility.reason}` };
-    if (!ctx.model) return { error: 'spawn requires a selected model.' };
-
-    return {
-      cwd: ctx.cwd,
-      parentSessionId: ctx.sessionManager.getSessionId(),
-      repository,
-      admission,
-      maxConcurrency: dependencies.config.getMultiverse().maxConcurrency,
-      model: ctx.model,
-      thinkingLevel: ctx.thinkingLevel ?? 'off',
-      registry: ctx.modelRegistry,
-      subagentModel: name => dependencies.config.getMultiverse().subagents[name].model,
-      subagentReasoning: name => dependencies.config.getMultiverse().subagents[name].model?.reasoning,
-      resolveSubagent: resolveChild,
-      resolveContinuation: childSessionId => latestChildInteraction(ctx.sessionManager.getEntries(), childSessionId),
-    };
-  };
+  let registeredSubAgentSession: SubagentDefinition | undefined;
 
   pi.registerTool(
     createSpawnTool({
-      resolve: resolveSpawnHost,
-      availableAgents: () => {
-        const eligibility = resolveMegamind();
-        return eligibility.eligible ? [...eligibility.roster.keys()] : [];
+      // Reuse the registry, but read the current model, configuration, and parent branch for each call.
+      getExecutionContext: ctx => {
+        const settings = dependencies.config.getMultiverse();
+        if (!settings.enabled || roleState.get().kind !== 'parent' || parentAgentState.getActive() !== 'megamind') {
+          return undefined;
+        }
+        if (!ctx.model) return { error: 'spawn requires a selected model.' };
+        const agentModel = (name: string) => (Object.hasOwn(settings.subagents, name) ? settings.subagents[name]?.model : undefined);
+        return {
+          cwd: ctx.cwd,
+          parentSessionId: ctx.sessionManager.getSessionId(),
+          repository,
+          admission,
+          maxConcurrency: settings.maxConcurrency,
+          model: ctx.model,
+          thinkingLevel: ctx.thinkingLevel ?? 'off',
+          registry: ctx.modelRegistry,
+          subagentModel: agentModel,
+          subagentReasoning: name => agentModel(name)?.reasoning,
+          getSubAgent: name => subAgents.getSubAgent(name),
+          resolveContinuation: id => latestChildInteraction(ctx.sessionManager.getBranch(), id),
+        };
       },
-      // `ctx` only exposes a read-only session manager, so the manifest is persisted through
-      // the extension API in closure. Custom entries stay out of LLM context, and no renderer
-      // is registered, so the manifest stays invisible to the user's transcript too.
+      availableAgents: () => subAgents.availableSubAgents.map(agent => agent.name),
       appendManifest: (customType, manifest) => pi.appendEntry(customType, manifest),
       run: dependencies.spawnRun,
     }),
   );
 
-  /** Active tools are reapplied after extension discovery and before the first child turn. */
-  const applyChildTools = (agent: BundledSubagentName, ctx: ExtensionContext): void => {
-    const resolved = resolveChild(agent);
-    if (!resolved.success) {
-      pi.setActiveTools([]);
-      ctx.ui.notify(`pi-arsenal: ${resolved.error}`, 'error');
+  pi.on('session_start', (_event, ctx) => {
+    const config = dependencies.config.getMultiverse();
+    registeredSubAgentSession = undefined;
+    roleState.classify([]);
+    parentAgentState.setActive('default');
+    if (!config.enabled) {
+      PiToolManager.removeActive(pi, [SPAWN_TOOL_NAME]);
       return;
     }
-    pi.setActiveTools(resolved.definition.tools);
-  };
 
-  const applyParentTools = (): void => {
-    const active = pi.getActiveTools().filter(name => name !== SPAWN_TOOL_NAME);
-    // Persona and tool switch together from the next turn.
-    pi.setActiveTools(parentAgentState.getActive() === 'megamind' && resolveMegamind().eligible ? [...active, SPAWN_TOOL_NAME] : active);
-  };
-
-  /**
-   * Switch the parent persona. Child sessions are not parents and never become one:
-   * a child's identity, prompt, and tools come from its subagent definition alone, so a
-   * switch there is refused before anything is persisted and no parent-agent entry is
-   * ever written into a child session.
-   */
-  const selectParentAgent = (agent: ParentAgent, ctx: ExtensionContext): { ok: true } | { ok: false; error: string } => {
-    const role = roleState.get();
-    if (role.kind !== 'parent') return { ok: false, error: 'Parent agents cannot be switched inside a subagent session.' };
-
-    parentAgentState.select(agent, (customType, data) => pi.appendEntry(customType, data));
-    if (agent === 'default') {
-      parentAgentState.setActive('default');
-      applyParentTools();
-      return { ok: true };
+    subAgents.resolveAvailability(config);
+    for (const error of definitionErrors) ctx.ui.notify(`pi-arsenal: ${error}`, 'error');
+    const roster = subAgents.availableSubAgents;
+    const tools = new Set(pi.getAllTools().map(tool => tool.name));
+    for (const agent of roster) {
+      const unknown = agent.tools.filter(name => !tools.has(name));
+      if (unknown.length) ctx.ui.notify(`pi-arsenal: ${agent.filePath}: unknown tools: ${unknown.join(', ')}. Agent remains available.`, 'warning');
     }
 
-    const eligibility = resolveMegamind();
-    parentAgentState.setActive(eligibility.eligible ? 'megamind' : 'default');
-    if (!eligibility.eligible) ctx.ui.notify(`pi-arsenal: Megamind unavailable; using Default. ${eligibility.reason}`, 'warning');
-    applyParentTools();
-    return { ok: true };
-  };
-
-  pi.on('session_start', (_event, ctx) => {
     const entries = ctx.sessionManager.getEntries();
     const role = roleState.classify(entries);
-    if (role.kind === 'invalid-child') {
-      pi.setActiveTools([]);
-      ctx.ui.notify(`pi-arsenal: ${role.error}`, 'error');
-      return;
-    }
-    if (role.kind === 'child') {
-      // Parent-agent entries carry no meaning in a child session and are never restored here.
-      applyChildTools(role.identity.agent, ctx);
-      return;
-    }
-
-    const config = dependencies.config.getMultiverse();
-    const preferred = parentAgentState.restore(entries, config.defaultAgent);
-    if (preferred === 'default') {
-      parentAgentState.setActive('default');
-      applyParentTools();
-      return;
-    }
-
-    const eligibility = resolveMegamind();
-    parentAgentState.setActive(eligibility.eligible ? 'megamind' : 'default');
-    if (!eligibility.eligible) ctx.ui.notify(`pi-arsenal: Megamind unavailable; using Default. ${eligibility.reason}`, 'warning');
-    applyParentTools();
-  });
-
-  pi.on('before_agent_start', (event, ctx) => {
-    const role = roleState.get();
-    if (role.kind === 'invalid-child') return;
-    if (role.kind === 'child') {
-      const resolved = resolveChild(role.identity.agent);
-      if (!resolved.success) {
-        ctx.ui.notify(`pi-arsenal: ${resolved.error}`, 'error');
-        return;
+    if (role.kind !== 'parent') {
+      let childError: string | undefined;
+      if (role.kind === 'invalid-child') childError = role.error;
+      else {
+        const registered = subAgents.getSubAgent(role.identity.agent);
+        if (registered?.enabled) registeredSubAgentSession = registered.agent;
+        else childError = `Subagent "${role.identity.agent}" is ${registered ? 'disabled' : 'not registered'}.`;
       }
-      return { systemPrompt: resolved.definition.prompt };
+      PiToolManager.overrideActive(pi, registeredSubAgentSession?.tools ?? []);
+      if (childError) ctx.ui.notify(`pi-arsenal: ${childError}`, 'error');
+      return;
     }
 
-    if (parentAgentState.getActive() !== 'megamind') {
-      applyParentTools();
-      return;
-    }
-    const eligibility = resolveMegamind();
-    if (!eligibility.eligible) {
-      parentAgentState.setActive('default');
-      applyParentTools();
-      ctx.ui.notify(`pi-arsenal: Megamind unavailable; using Default. ${eligibility.reason}`, 'warning');
-      return;
-    }
-    applyParentTools();
-    return { systemPrompt: `${event.systemPrompt}\n\n${eligibility.prompt}` };
+    const preferred = parentAgentState.restore(entries, config.defaultAgent);
+    const active = preferred === 'megamind' && roster.length > 0 ? 'megamind' : 'default';
+    parentAgentState.setActive(active);
+    if (active === 'megamind') PiToolManager.addActive(pi, [SPAWN_TOOL_NAME]);
+    else PiToolManager.removeActive(pi, [SPAWN_TOOL_NAME]);
+    if (!roster.length) ctx.ui.notify('pi-arsenal: No enabled valid Multiverse subagent is available; using Default.', 'warning');
   });
 
-  return { roleState, parentAgentState, selectParentAgent };
+  pi.on('before_agent_start', event => {
+    const config = dependencies.config.getMultiverse();
+    if (!config.enabled) return;
+    if (registeredSubAgentSession) return { systemPrompt: registeredSubAgentSession.prompt };
+    if (roleState.get().kind === 'parent' && parentAgentState.getActive() === 'megamind') {
+      return { systemPrompt: `${event.systemPrompt}\n\n${buildMegamindPrompt(subAgents.availableSubAgents, config.maxConcurrency)}` };
+    }
+  });
+
+  return { roleState, parentAgentState };
 }

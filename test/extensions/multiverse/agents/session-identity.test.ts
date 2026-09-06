@@ -76,8 +76,8 @@ describe('SubagentIdentityHandler.parse', () => {
     expect(SubagentIdentityHandler.parse([unrelatedEntry('other')])).toEqual({ kind: 'none' });
   });
 
-  it('recognizes a valid marker regardless of its conversation branch', () => {
-    const identity = SubagentIdentityHandler.create('visualizer', 'parent-session');
+  it('recognizes an arbitrary string name regardless of its conversation branch', () => {
+    const identity = SubagentIdentityHandler.create('researcher', 'parent-session');
     const result = SubagentIdentityHandler.parse([
       unrelatedEntry('root'),
       customEntry('child-marker', identity, 'abandoned-branch-entry'),
@@ -97,7 +97,7 @@ describe('SubagentIdentityHandler.parse', () => {
 
   it.each([
     [{ version: 2, agent: 'fixer', parentSessionId: 'parent' }, 'version'],
-    [{ version: 1, agent: 'unknown', parentSessionId: 'parent' }, 'agent'],
+    [{ version: 1, agent: '', parentSessionId: 'parent' }, 'agent'],
     [{ version: 1, agent: 'fixer', parentSessionId: '' }, 'parentSessionId'],
     [{ version: 1, agent: 'fixer', parentSessionId: 'parent', prompt: 'snapshot' }, 'prompt'],
   ])('rejects invalid marker data %p', (data, expectedError) => {

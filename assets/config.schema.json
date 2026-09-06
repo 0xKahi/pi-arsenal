@@ -81,7 +81,7 @@
       "properties": {
         "enabled": {
           "default": false,
-          "description": "Enable Multiverse orchestration for parent sessions.",
+          "description": "Enable Multiverse orchestration and child persona/tool behavior.",
           "type": "boolean"
         },
         "defaultAgent": {
@@ -112,128 +112,48 @@
               "enabled": true
             }
           },
-          "description": "Settings for the bundled Multiverse subagents.",
+          "description": "Settings by registered subagent name; unspecified agents default to enabled. Settings alone do not register agents.",
           "type": "object",
-          "properties": {
-            "explorer": {
-              "default": {
-                "enabled": true
-              },
-              "type": "object",
-              "properties": {
-                "enabled": {
-                  "default": true,
-                  "description": "Whether this bundled subagent can be created or continued.",
-                  "type": "boolean"
-                },
-                "model": {
-                  "description": "Optional preferred model; the parent model is used when omitted.",
-                  "type": "object",
-                  "properties": {
-                    "provider": {
-                      "type": "string"
-                    },
-                    "modelId": {
-                      "type": "string"
-                    },
-                    "reasoning": {
-                      "type": "string",
-                      "enum": [
-                        "off",
-                        "minimal",
-                        "low",
-                        "medium",
-                        "high",
-                        "xhigh",
-                        "max"
-                      ]
-                    }
-                  },
-                  "additionalProperties": false
-                }
-              },
-              "additionalProperties": false
-            },
-            "fixer": {
-              "default": {
-                "enabled": true
-              },
-              "type": "object",
-              "properties": {
-                "enabled": {
-                  "default": true,
-                  "description": "Whether this bundled subagent can be created or continued.",
-                  "type": "boolean"
-                },
-                "model": {
-                  "description": "Optional preferred model; the parent model is used when omitted.",
-                  "type": "object",
-                  "properties": {
-                    "provider": {
-                      "type": "string"
-                    },
-                    "modelId": {
-                      "type": "string"
-                    },
-                    "reasoning": {
-                      "type": "string",
-                      "enum": [
-                        "off",
-                        "minimal",
-                        "low",
-                        "medium",
-                        "high",
-                        "xhigh",
-                        "max"
-                      ]
-                    }
-                  },
-                  "additionalProperties": false
-                }
-              },
-              "additionalProperties": false
-            },
-            "visualizer": {
-              "default": {
-                "enabled": true
-              },
-              "type": "object",
-              "properties": {
-                "enabled": {
-                  "default": true,
-                  "description": "Whether this bundled subagent can be created or continued.",
-                  "type": "boolean"
-                },
-                "model": {
-                  "description": "Optional preferred model; the parent model is used when omitted.",
-                  "type": "object",
-                  "properties": {
-                    "provider": {
-                      "type": "string"
-                    },
-                    "modelId": {
-                      "type": "string"
-                    },
-                    "reasoning": {
-                      "type": "string",
-                      "enum": [
-                        "off",
-                        "minimal",
-                        "low",
-                        "medium",
-                        "high",
-                        "xhigh",
-                        "max"
-                      ]
-                    }
-                  },
-                  "additionalProperties": false
-                }
-              },
-              "additionalProperties": false
-            }
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1
           },
-          "additionalProperties": false
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "default": true,
+                "description": "Whether this registered subagent can be created or continued.",
+                "type": "boolean"
+              },
+              "model": {
+                "description": "Optional preferred model; the parent model is used when omitted.",
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "type": "string"
+                  },
+                  "modelId": {
+                    "type": "string"
+                  },
+                  "reasoning": {
+                    "type": "string",
+                    "enum": [
+                      "off",
+                      "minimal",
+                      "low",
+                      "medium",
+                      "high",
+                      "xhigh",
+                      "max"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
         }
       },
       "additionalProperties": false

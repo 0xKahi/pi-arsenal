@@ -205,7 +205,7 @@ describe('SpawnResultComponent', () => {
 describe('spawn renderResult', () => {
   it('reuses the same component across renders so spinner and timer state survive', () => {
     const tool = createSpawnTool({
-      resolve: () => ({}) as never,
+      getExecutionContext: () => ({}) as never,
       availableAgents: () => ['fixer'],
     } satisfies SpawnToolHost);
     const context = { args, invalidate: () => {}, lastComponent: undefined as unknown };
@@ -225,7 +225,7 @@ describe('spawn renderResult', () => {
     progress.observe(0, { type: 'tool_execution_start', toolCallId: '1', toolName: 'bash', args: { command: 'git diff' } } as never);
     progress.settle(0, 'success');
     const tool = createSpawnTool({
-      resolve: () => ({}) as never,
+      getExecutionContext: () => ({}) as never,
       availableAgents: () => ['fixer'],
       run: async () => ({ interactions: [childInteraction({ body: 'done' })], progress, aborted: false }),
     });

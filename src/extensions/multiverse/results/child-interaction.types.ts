@@ -1,4 +1,3 @@
-import type { BundledSubagentName } from '../agents/subagent-definition.ts';
 import { CHILD_INTERACTION_VERSION, INTERACTION_ID_PREFIX } from '../constants.ts';
 import type { TaskProgress } from '../tools/spawn/spawn-progress.ts';
 
@@ -36,7 +35,7 @@ export interface ChildInteraction {
   version: typeof CHILD_INTERACTION_VERSION;
   interactionId: string;
   taskIndex: number;
-  agent: BundledSubagentName;
+  agent: string;
   status: ChildInteractionStatus;
   childSessionId: string;
   childSessionFile: string;
