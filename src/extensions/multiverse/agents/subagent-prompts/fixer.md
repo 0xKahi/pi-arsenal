@@ -9,6 +9,7 @@ tools:
   - find
   - ls
 skills: []
+color: "#95C9F8"
 metadata:
   - "Lane: Bounded implementation and executioner"
   - "Role: Fast execution specialist for well-defined tasks"

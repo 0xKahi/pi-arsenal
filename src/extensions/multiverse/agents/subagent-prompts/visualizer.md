@@ -7,6 +7,7 @@ tools:
   - find
   - bash
 skills: []
+color: "#ff966c"
 metadata:
   - "Lane: Visual/media analysis isolated from orchestrator context"
   - "Role: Visual analysis specialist for images, PDFs, and diagrams"

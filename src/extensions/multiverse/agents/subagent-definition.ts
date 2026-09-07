@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { parse } from 'yaml';
 import { z } from 'zod';
+import { ColorHexSchema } from '../../../schemas/shared-config.schema';
 
 export interface SubagentDefinition {
   name: string;
@@ -8,6 +9,7 @@ export interface SubagentDefinition {
   skills: string[];
   /** Parent-facing routing guidance, never the child's second-person prompt. */
   metadata: string[];
+  color?: string;
   prompt: string;
   filePath: string;
 }
@@ -21,6 +23,7 @@ const FrontmatterSchema = z.strictObject({
   tools: z.array(z.string().trim().min(1)),
   skills: z.array(z.string().trim().min(1)),
   metadata: z.array(z.string().min(1)).min(1),
+  color: ColorHexSchema.optional(),
 });
 
 const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)([\s\S]*)$/;

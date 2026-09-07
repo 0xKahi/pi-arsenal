@@ -46,3 +46,7 @@ export const RESULT_BOUNDARY_NONCE_BYTES = 3;
  */
 export const MAX_OUTPUT_LINES = 20_000;
 export const MAX_OUTPUT_BYTES = 256 * 1024;
+
+export const AGENT_COLORS = {
+  megamind: '#548be3',
+};

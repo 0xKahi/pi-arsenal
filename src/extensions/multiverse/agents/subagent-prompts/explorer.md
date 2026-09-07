@@ -7,6 +7,7 @@ tools:
   - ls
   - bash
 skills: []
+color: "#DDAFF8"
 metadata:
   - "Lane: Fast codebase recon that returns compressed context"
   - "Stats: 2x faster codebase search than orchestrator, 1/2 cost of orchestrator"

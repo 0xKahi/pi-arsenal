@@ -1,10 +1,12 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import type { ConfigProvider } from '../../config/config-loader.ts';
+import { emitSetAgentNameEvent } from '../../utils/emit-set-agentName-event.util.ts';
 import { PiToolManager } from '../../utils/pi-tool-manager.util.ts';
 import { SessionRoleState } from './agents/session-role-state.ts';
 import type { SubagentDefinition } from './agents/subagent-definition.ts';
 import { discoverSubagentPaths, SUBAGENT_PROMPTS_DIRECTORY } from './agents/subagent-paths.ts';
 import { SubAgentRegistry } from './agents/subagent-registry.ts';
+import { AGENT_COLORS } from './constants.ts';
 import { buildMegamindPrompt } from './orchestrator/orchestrator-prompts/megamind.ts';
 import { ParentAgentState } from './orchestrator/parent-agent.ts';
 import type { runSpawn } from './orchestrator/spawn-orchestrator.ts';
@@ -95,8 +97,12 @@ export function registerMultiverse(pi: ExtensionAPI, dependencies: MultiverseDep
       if (role.kind === 'invalid-child') childError = role.error;
       else {
         const registered = subAgents.getSubAgent(role.identity.agent);
-        if (registered?.enabled) registeredSubAgentSession = registered.agent;
-        else childError = `Subagent "${role.identity.agent}" is ${registered ? 'disabled' : 'not registered'}.`;
+        if (registered?.enabled) {
+          registeredSubAgentSession = registered.agent;
+          emitSetAgentNameEvent(pi, { name: registered.agent.name, color: registered.agent.color });
+        } else {
+          childError = `Subagent "${role.identity.agent}" is ${registered ? 'disabled' : 'not registered'}.`;
+        }
       }
       PiToolManager.overrideActive(pi, registeredSubAgentSession?.tools ?? []);
       if (childError) ctx.ui.notify(`pi-arsenal: ${childError}`, 'error');
@@ -105,10 +111,15 @@ export function registerMultiverse(pi: ExtensionAPI, dependencies: MultiverseDep
 
     const preferred = parentAgentState.restore(entries, config.defaultAgent);
     const active = preferred === 'megamind' && roster.length > 0 ? 'megamind' : 'default';
+
     parentAgentState.setActive(active);
-    if (active === 'megamind') PiToolManager.addActive(pi, [SPAWN_TOOL_NAME]);
-    else PiToolManager.removeActive(pi, [SPAWN_TOOL_NAME]);
+    if (active === 'megamind') {
+      PiToolManager.addActive(pi, [SPAWN_TOOL_NAME]);
+    } else {
+      PiToolManager.removeActive(pi, [SPAWN_TOOL_NAME]);
+    }
     if (!roster.length) ctx.ui.notify('pi-arsenal: No enabled valid Multiverse subagent is available; using Default.', 'warning');
+    emitSetAgentNameEvent(pi, { name: active, color: active === 'megamind' ? AGENT_COLORS.megamind : undefined });
   });
 
   pi.on('before_agent_start', event => {
