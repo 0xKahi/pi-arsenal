@@ -10,7 +10,7 @@ import { AGENT_COLORS } from './constants.ts';
 import { buildMegamindPrompt } from './orchestrator/orchestrator-prompts/megamind.ts';
 import { ParentAgentState } from './orchestrator/parent-agent.ts';
 import type { runSpawn } from './orchestrator/spawn-orchestrator.ts';
-import { latestChildInteraction } from './results/child-interaction-lookup.ts';
+import { latestChildInteraction } from './results/child-interaction.ts';
 import { ChildAdmissionRegistry } from './runtime/child-admission.ts';
 import { ChildSessionRepository } from './runtime/child-session-repository.ts';
 import { createSpawnTool, SPAWN_TOOL_NAME } from './tools/spawn/spawn.tool.ts';

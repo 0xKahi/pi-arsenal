@@ -42,7 +42,7 @@ export const RESULT_BOUNDARY_NONCE_BYTES = 3;
  * continue the child for the remainder — a child that ignored its conciseness
  * instructions once has no new reason to obey them on a retry.
  *
- * Declared here once: `results/output-cap.ts` re-exports these rather than redeclaring.
+ * Declared here once: `results/child-interaction.ts` re-exports these rather than redeclaring.
  */
 export const MAX_OUTPUT_LINES = 20_000;
 export const MAX_OUTPUT_BYTES = 256 * 1024;

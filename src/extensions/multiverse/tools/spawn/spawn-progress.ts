@@ -1,5 +1,5 @@
 import type { AgentSessionEvent } from '@earendil-works/pi-coding-agent';
-import type { ChildInteractionStatus } from '../../results/child-interaction.types.ts';
+import type { ChildInteractionStatus } from '../../results/child-interaction.ts';
 
 /**
  * Observed lifecycle phase of one task.

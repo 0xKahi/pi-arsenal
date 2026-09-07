@@ -1,4 +1,4 @@
-import type { ChildInteraction } from '../../../src/extensions/multiverse/results/child-interaction.types.ts';
+import type { ChildInteraction } from '../../../src/extensions/multiverse/results/child-interaction.ts';
 
 /** Minimal valid interaction used across Multiverse result tests. */
 export function childInteraction(overrides: Partial<ChildInteraction> = {}): ChildInteraction {

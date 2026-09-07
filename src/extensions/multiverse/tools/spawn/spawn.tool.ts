@@ -4,11 +4,17 @@ import { Container } from '@earendil-works/pi-tui';
 import { CHILD_INTERACTION_VERSION, SPAWN_TOOL_NAME } from '../../constants.ts';
 import type { SpawnOrchestratorDependencies, SpawnRunResult } from '../../orchestrator/spawn-orchestrator.ts';
 import { runSpawn } from '../../orchestrator/spawn-orchestrator.ts';
-import { isSpawnToolDetails, type SpawnToolDetails } from '../../results/child-interaction.types.ts';
+import { isSpawnToolDetails, type SpawnToolDetails } from '../../results/child-interaction.ts';
 import { buildResultEnvelope } from '../../results/result-envelope.ts';
 import { describeTask, type SpawnInput, spawnParameters, validateSpawnInput } from './spawn.schema.ts';
-import { SPAWN_MANIFEST_VERSION, type SpawnManifest, summarizeTelemetry, toManifestTask } from './spawn-manifest.ts';
-import { type ManifestSink, SpawnManifestWriter } from './spawn-manifest-writer.ts';
+import {
+  type ManifestSink,
+  SPAWN_MANIFEST_VERSION,
+  type SpawnManifest,
+  SpawnManifestWriter,
+  summarizeTelemetry,
+  toManifestTask,
+} from './spawn-manifest.ts';
 import { buildSpawnRows, SpawnResultComponent } from './spawn-result.component.ts';
 
 export { SPAWN_TOOL_NAME };

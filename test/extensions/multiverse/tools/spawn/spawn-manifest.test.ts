@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'bun:test';
 import {
+  isSpawnManifest,
+  recoverSpawnManifests,
   SPAWN_MANIFEST_CUSTOM_TYPE,
   type SpawnManifest,
+  SpawnManifestWriter,
   summarizeTelemetry,
   toManifestTask,
 } from '../../../../../src/extensions/multiverse/tools/spawn/spawn-manifest.ts';
@@ -57,5 +60,65 @@ describe('SpawnManifest', () => {
     );
 
     expect(totals).toEqual({ model: 'anthropic/model', durationMs: 99, requests: 3, tokensInput: 15, tokensOutput: 5, cost: 0.75 });
+  });
+});
+
+
+const completedManifest: SpawnManifest = {
+  version: 1,
+  outcome: 'completed',
+  context: 'shared context',
+  tasks: [],
+  telemetry: { durationMs: 0, requests: 0, tokensInput: 0, tokensOutput: 0, cost: 0 },
+  counts: { total: 0, succeeded: 0, failed: 0, aborted: 0 },
+};
+
+describe('SpawnManifestWriter', () => {
+  it('appends nothing while preflight rejected before dispatch', () => {
+    const writer = new SpawnManifestWriter();
+    const appended: string[] = [];
+
+    writer.appendOnce((type: string) => appended.push(type), completedManifest);
+
+    expect(appended).toEqual([]);
+    expect(writer.hasAppended()).toBe(false);
+  });
+
+  it('appends exactly once on completion', () => {
+    const writer = new SpawnManifestWriter();
+    const appended: string[] = [];
+    writer.markDispatched();
+
+    writer.appendOnce((type: string) => appended.push(type), completedManifest);
+
+    expect(appended).toEqual(['arsenal-spawn-manifest']);
+    expect(writer.hasAppended()).toBe(true);
+    expect(() => writer.appendOnce((_type: string) => {}, completedManifest)).toThrow('already appended');
+  });
+});
+
+
+const abortedManifest: SpawnManifest = {
+  version: 1,
+  outcome: 'aborted',
+  context: 'shared context',
+  tasks: [],
+  telemetry: { durationMs: 1, requests: 1, tokensInput: 1, tokensOutput: 1, cost: 1 },
+  counts: { total: 1, succeeded: 0, failed: 0, aborted: 1 },
+};
+
+describe('recoverSpawnManifests', () => {
+  it('recovers valid hidden custom entries while ignoring invalid or unrelated entries', () => {
+    expect(isSpawnManifest(abortedManifest)).toBe(true);
+    expect(isSpawnManifest({ version: 2 })).toBe(false);
+
+    const manifests = recoverSpawnManifests([
+      { type: 'message', customType: 'message', data: {} },
+      { type: 'custom', customType: SPAWN_MANIFEST_CUSTOM_TYPE, data: abortedManifest },
+      { type: 'custom', customType: 'other', data: {} },
+      { type: 'custom', customType: SPAWN_MANIFEST_CUSTOM_TYPE, data: { version: 2 } },
+    ]);
+
+    expect(manifests).toEqual([abortedManifest]);
   });
 });

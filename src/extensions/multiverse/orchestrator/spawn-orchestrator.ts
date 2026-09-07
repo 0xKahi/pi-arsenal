@@ -1,14 +1,10 @@
 import type { Api, Model } from '@earendil-works/pi-ai';
 import type { SubAgentRegistry } from '../agents/subagent-registry.ts';
 import { CHILD_INTERACTION_VERSION } from '../constants.ts';
-import { type ChildInteraction, createInteractionId, resolveCheckpointAfter } from '../results/child-interaction.types.ts';
-import { capOutput } from '../results/output-cap.ts';
+import { type ChildInteraction, capOutput, createInteractionId, resolveCheckpointAfter } from '../results/child-interaction.ts';
 import type { ChildAdmissionRegistry } from '../runtime/child-admission.ts';
-import { hydrateChildInteraction } from '../runtime/child-hydration.ts';
-import { resolveChildReasoning } from '../runtime/child-reasoning.ts';
-import type { ChildThinkingLevel } from '../runtime/child-runtime.ts';
+import { ChildRuntime, type ChildThinkingLevel, type ModelResolutionRegistry, type SubagentModelConfig } from '../runtime/child-runtime.ts';
 import type { ChildSessionHandle, ChildSessionRepository } from '../runtime/child-session-repository.ts';
-import { type ModelResolutionRegistry, resolveSubagentModel, type SubagentModelConfig } from '../runtime/model-resolution.ts';
 import { runWithGlobalConcurrency } from '../runtime/task-scheduler.ts';
 import { buildChildPrompt, describeTask, type SpawnInput, type SpawnTask } from '../tools/spawn/spawn.schema.ts';
 import { SpawnProgress } from '../tools/spawn/spawn-progress.ts';
@@ -28,7 +24,8 @@ export interface SpawnOrchestratorDependencies {
   getSubAgent: SubAgentRegistry['getSubAgent'];
   /** Resolves a continuation target from the active parent branch only. */
   resolveContinuation: (childSessionId: string) => ChildInteraction | undefined;
-  hydrate?: typeof hydrateChildInteraction;
+  /** Injected so tests can substitute a whole child interaction without reaching into SDK internals. */
+  runtime?: ChildRuntime;
 }
 
 export interface SpawnRunResult {
@@ -48,7 +45,7 @@ export async function runSpawn(
   dependencies: SpawnOrchestratorDependencies,
   options: { signal?: AbortSignal; onProgress?: (progress: SpawnProgress) => void } = {},
 ): Promise<SpawnRunResult> {
-  const hydrate = dependencies.hydrate ?? hydrateChildInteraction;
+  const runtime = dependencies.runtime ?? new ChildRuntime();
   const progress = new SpawnProgress(
     input.tasks.map((task, index) => ({
       label: describeTask(task, index),
@@ -66,7 +63,7 @@ export async function runSpawn(
     async (task, index) => {
       progress.start(index);
       publish();
-      const interaction = await runTask({ task, index, input, dependencies, hydrate, signal: options.signal, progress, publish });
+      const interaction = await runTask({ task, index, input, dependencies, runtime, signal: options.signal, progress, publish });
       progress.settle(index, interaction.status, interaction.error);
       publish();
       return interaction;
@@ -91,7 +88,7 @@ interface RunTaskInput {
   index: number;
   input: SpawnInput;
   dependencies: SpawnOrchestratorDependencies;
-  hydrate: typeof hydrateChildInteraction;
+  runtime: ChildRuntime;
   signal?: AbortSignal;
   progress: SpawnProgress;
   publish: () => void;
@@ -108,13 +105,13 @@ async function runTask(context: RunTaskInput): Promise<ChildInteraction> {
     return placeholderInteraction(task, index, 'failure', `Subagent "${agent}" is ${resolved ? 'disabled' : 'not registered'}.`, agent);
   }
 
-  const model = await resolveSubagentModel({
+  const model = await ChildRuntime.resolveModel({
     configured: dependencies.subagentModel(agent),
     parentModel: dependencies.model,
     registry: dependencies.registry,
   });
   if (!model.success) return placeholderInteraction(task, index, 'failure', model.error, agent);
-  const thinkingLevel = resolveChildReasoning(model.model, dependencies.subagentReasoning(agent), dependencies.thinkingLevel);
+  const thinkingLevel = ChildRuntime.resolveReasoning(model.model, dependencies.subagentReasoning(agent), dependencies.thinkingLevel);
 
   let handle: ChildSessionHandle;
   let checkpoint: string | null | undefined;
@@ -131,7 +128,7 @@ async function runTask(context: RunTaskInput): Promise<ChildInteraction> {
   // One managed writer per child for the whole interaction.
   const release = dependencies.admission.acquire(handle.sessionId);
   try {
-    const outcome = await context.hydrate({
+    const outcome = await context.runtime.run({
       cwd: dependencies.cwd,
       definition: resolved.agent,
       sessionManager: handle.sessionManager,

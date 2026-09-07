@@ -1,6 +1,25 @@
+import { renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { readFile, rename, symlink, unlink, writeFile } from 'node:fs/promises';
 
 export class Atomic {
+  /**
+   * Synchronous counterpart to {@link Atomic.write}, for callers that sit on a
+   * synchronous API and cannot await. Same guarantees: the target is only ever
+   * replaced by a complete file, and a failed write leaves no temp file behind.
+   */
+  static writeSync({ filePath, data }: { filePath: string; data: unknown }): void {
+    const tempPath = `${filePath}.tmp.${process.pid}.${Date.now()}`;
+    try {
+      writeFileSync(tempPath, JSON.stringify(data, null, 2), { mode: 0o600 });
+      renameSync(tempPath, filePath);
+    } catch (error) {
+      try {
+        unlinkSync(tempPath);
+      } catch {}
+      throw error;
+    }
+  }
+
   static async write({ filePath, data }: { filePath: string; data: unknown }): Promise<void> {
     const tempPath = `${filePath}.tmp.${process.pid}`;
     try {

@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { RESULT_BOUNDARY_NONCE_BYTES } from '../constants.ts';
-import type { ChildInteraction } from './child-interaction.types.ts';
+import type { ChildInteraction } from './child-interaction.ts';
 
 export interface ResultEnvelope {
   content: string;

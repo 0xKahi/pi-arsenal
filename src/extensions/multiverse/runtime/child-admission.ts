@@ -1,4 +1,4 @@
-import type { ChildInteraction } from '../results/child-interaction.types.ts';
+import type { ChildInteraction } from '../results/child-interaction.ts';
 
 export class ChildAdmissionRegistry {
   private readonly active = new Set<string>();

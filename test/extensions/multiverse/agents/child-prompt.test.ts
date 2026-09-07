@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import type { ExtensionAPI, ExtensionContext, SessionEntry } from '@earendil-works/pi-coding-agent';
 import type { ConfigProvider } from '../../../../src/config/config-loader.ts';
-import { SubagentIdentityHandler, SUBAGENT_IDENTITY_CUSTOM_TYPE } from '../../../../src/extensions/multiverse/agents/session-identity.ts';
+import { SUBAGENT_IDENTITY_CUSTOM_TYPE, SubagentIdentityHandler } from '../../../../src/extensions/multiverse/agents/session-identity.ts';
 import { registerMultiverse } from '../../../../src/extensions/multiverse/multiverse.extension.ts';
 
 const config: ConfigProvider = {
@@ -38,6 +38,7 @@ describe('child prompt policy', () => {
       getActiveTools: () => [],
       getAllTools: () => ['read', 'grep', 'find', 'ls', 'bash', 'edit', 'write', 'spawn'].map(name => ({ name })),
       setActiveTools: (names: string[]) => activeToolSelections.push(names),
+      events: { emit: () => {} },
     } as unknown as ExtensionAPI;
     const notifications: string[] = [];
     const ctx = {

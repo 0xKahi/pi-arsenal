@@ -2,7 +2,7 @@ import { dye } from '@0xkahi/cli-dye';
 import type { ThemeColor } from '@earendil-works/pi-coding-agent';
 import { type Component, truncateToWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui';
 import { SPINNER_INTERVAL_MS, STATUS_SYMBOLS, spinnerFrame, treeConnector, treeContinuation } from '../../../../libs/tui-glyphs.ts';
-import type { ChildInteraction, SpawnToolDetails } from '../../results/child-interaction.types.ts';
+import type { ChildInteraction, SpawnToolDetails } from '../../results/child-interaction.ts';
 import type { SpawnInput, SpawnTask } from './spawn.schema.ts';
 import type { TaskPhase, TaskProgress, ToolTrailEntry } from './spawn-progress.ts';
 

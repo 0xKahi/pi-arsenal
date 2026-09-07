@@ -16,6 +16,7 @@ const megamindEntry: SessionEntry = {
 
 const setup = (initialEnabled: boolean, enabledRoster = true) => {
   let enabled = initialEnabled;
+  const agentNameEvents: string[] = [];
   const handlers = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
   const pi = {
     on: (eventName: string, handler: (event: never, ctx: ExtensionContext) => unknown) => {
@@ -28,6 +29,7 @@ const setup = (initialEnabled: boolean, enabledRoster = true) => {
     getActiveTools: () => [],
     getAllTools: () => ['read', 'grep', 'find', 'ls', 'bash', 'edit', 'write'].map(name => ({ name })),
     getCommands: () => [],
+    events: { emit: (_name: string, payload: { agentName: string }) => agentNameEvents.push(payload.agentName) },
   } as unknown as ExtensionAPI;
   const config: ConfigProvider = {
     getP2pCouncil: () => ({ enabled: false, layout: 'inline' }),
@@ -49,7 +51,7 @@ const setup = (initialEnabled: boolean, enabledRoster = true) => {
   const start = () => handlers.get('session_start')?.[0]?.({ type: 'session_start', reason: 'startup' } as never, ctx);
   const beforeAgentStart = (systemPrompt: string) =>
     handlers.get('before_agent_start')?.[0]?.({ systemPrompt } as never, ctx) as { systemPrompt?: string } | undefined;
-  return { activation, notifications, setEnabled: (value: boolean) => (enabled = value), start, beforeAgentStart };
+  return { activation, notifications, agentNameEvents, setEnabled: (value: boolean) => (enabled = value), start, beforeAgentStart };
 };
 
 describe('parent persona eligibility', () => {
@@ -64,6 +66,8 @@ describe('parent persona eligibility', () => {
     runtime.start();
     expect(runtime.activation.parentAgentState.getPreferred()).toBe('megamind');
     expect(runtime.activation.parentAgentState.getActive()).toBe('megamind');
+    // A disabled start returns before announcing; only the eligible start names an agent.
+    expect(runtime.agentNameEvents).toEqual(['MEGAMIND']);
   });
 
   it('falls back when no enabled valid subagent is available', () => {

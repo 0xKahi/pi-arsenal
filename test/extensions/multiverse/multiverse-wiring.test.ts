@@ -4,8 +4,8 @@ import type { ConfigProvider } from '../../../src/config/config-loader.ts';
 import { SUBAGENT_IDENTITY_CUSTOM_TYPE } from '../../../src/extensions/multiverse/agents/session-identity.ts';
 import { registerMultiverse } from '../../../src/extensions/multiverse/multiverse.extension.ts';
 import { PARENT_AGENT_CUSTOM_TYPE } from '../../../src/extensions/multiverse/orchestrator/parent-agent.ts';
+import { recoverSpawnManifests } from '../../../src/extensions/multiverse/tools/spawn/spawn-manifest.ts';
 import { SpawnProgress } from '../../../src/extensions/multiverse/tools/spawn/spawn-progress.ts';
-import { recoverSpawnManifests } from '../../../src/extensions/multiverse/tools/spawn/spawn-manifest-recovery.ts';
 import { MultiverseConfigSchema } from '../../../src/schemas/multiverse.config.schema.ts';
 import { childInteraction } from './interaction-fixture.ts';
 
@@ -33,6 +33,7 @@ const setup = (initialEntries: SessionEntry[] = [], persona: 'default' | 'megami
     getActiveTools: () => activeTools,
     getAllTools: () => ['read', 'grep', 'find', 'ls', 'bash', 'edit', 'write', 'spawn'].map(name => ({ name })),
     getCommands: () => [],
+    events: { emit: () => {} },
   } as unknown as ExtensionAPI;
 
   const config: ConfigProvider = {

@@ -1,5 +1,5 @@
 import { SPAWN_MANIFEST_CUSTOM_TYPE, SPAWN_MANIFEST_VERSION } from '../../constants.ts';
-import type { ChildInteraction, ChildInteractionStatus, ChildTelemetry } from '../../results/child-interaction.types.ts';
+import type { ChildInteraction, ChildInteractionStatus, ChildTelemetry } from '../../results/child-interaction.ts';
 import type { SpawnTask } from './spawn.schema.ts';
 
 export { SPAWN_MANIFEST_CUSTOM_TYPE, SPAWN_MANIFEST_VERSION };
@@ -66,4 +66,53 @@ export function summarizeTelemetry(interactions: readonly ChildInteraction[], du
     }),
     { model, durationMs, requests: 0, tokensInput: 0, tokensOutput: 0, cost: 0 },
   );
+}
+
+// --- write-once guard --------------------------------------------------
+
+export type ManifestSink = (customType: string, manifest: SpawnManifest) => void;
+
+/**
+ * Guarantees exactly one manifest per spawn call.
+ *
+ * Nothing is written when the call is rejected before dispatch, and every post-dispatch
+ * terminal path (completion, failure, abort) writes once and only once.
+ */
+export class SpawnManifestWriter {
+  private appended = false;
+  private dispatched = false;
+
+  markDispatched(): void {
+    this.dispatched = true;
+  }
+
+  hasAppended(): boolean {
+    return this.appended;
+  }
+
+  appendOnce(sink: ManifestSink, manifest: SpawnManifest): void {
+    if (!this.dispatched) return;
+    if (this.appended) throw new Error(`Spawn already appended its ${SPAWN_MANIFEST_CUSTOM_TYPE} manifest.`);
+    this.appended = true;
+    sink(SPAWN_MANIFEST_CUSTOM_TYPE, manifest);
+  }
+}
+
+// --- recovery ----------------------------------------------------------
+
+export function isSpawnManifest(value: unknown): value is SpawnManifest {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const candidate = value as SpawnManifest;
+  return (
+    candidate.version === SPAWN_MANIFEST_VERSION &&
+    (candidate.outcome === 'completed' || candidate.outcome === 'aborted') &&
+    Array.isArray(candidate.tasks)
+  );
+}
+
+/** Manifests stay out of model context but remain recoverable from stored session entries. */
+export function recoverSpawnManifests(entries: ReadonlyArray<{ type?: string; customType?: string; data?: unknown }>): SpawnManifest[] {
+  return entries
+    .filter(entry => entry.type === 'custom' && entry.customType === SPAWN_MANIFEST_CUSTOM_TYPE && isSpawnManifest(entry.data))
+    .map(entry => entry.data as SpawnManifest);
 }

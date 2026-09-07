@@ -52,6 +52,7 @@ describe('Multiverse activation lifecycle', () => {
     let bound = false;
     const selections: string[][] = [];
     const notifications: string[] = [];
+    const agentNameEvents: string[] = [];
     const executions: SpawnOrchestratorDependencies[] = [];
     const handlers = new Map<string, (event: never, ctx: ExtensionContext) => unknown>();
     let tool: { execute: (id: string, input: never, signal: undefined, update: undefined, ctx: ExtensionContext) => Promise<unknown> };
@@ -70,6 +71,7 @@ describe('Multiverse activation lifecycle', () => {
         selections.push(names);
       },
       appendEntry: () => {},
+      events: { emit: (_name: string, payload: { agentName: string }) => agentNameEvents.push(payload.agentName) },
     } as unknown as ExtensionAPI;
     const ctx = {
       cwd: '/tmp/project',
@@ -97,6 +99,7 @@ describe('Multiverse activation lifecycle', () => {
       ctx,
       selections,
       notifications,
+      agentNameEvents,
       executions,
       start,
       turn,
@@ -117,6 +120,7 @@ describe('Multiverse activation lifecycle', () => {
     runtime.start();
     expect(runtime.activation.parentAgentState.getActive()).toBe('megamind');
     expect(runtime.turn()?.systemPrompt).toContain('runs 2 of them at a time');
+    expect(runtime.agentNameEvents).toEqual(['MEGAMIND']);
   });
 
   it('warns once about unknown tools, ignores unknown skills, and reuses definitions for turns/spawn', async () => {

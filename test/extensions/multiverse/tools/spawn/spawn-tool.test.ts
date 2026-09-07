@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { SpawnOrchestratorDependencies } from '../../../../../src/extensions/multiverse/orchestrator/spawn-orchestrator.ts';
-import { isSpawnToolDetails } from '../../../../../src/extensions/multiverse/results/child-interaction.types.ts';
+import { isSpawnToolDetails } from '../../../../../src/extensions/multiverse/results/child-interaction.ts';
 import { createSpawnTool, type SpawnToolHost } from '../../../../../src/extensions/multiverse/tools/spawn/spawn.tool.ts';
 import { SpawnProgress } from '../../../../../src/extensions/multiverse/tools/spawn/spawn-progress.ts';
 import { childInteraction } from '../../interaction-fixture.ts';

@@ -3,7 +3,7 @@ import type { SubagentDefinition } from '../../../../src/extensions/multiverse/a
 import type { SpawnOrchestratorDependencies } from '../../../../src/extensions/multiverse/orchestrator/spawn-orchestrator.ts';
 import { runSpawn } from '../../../../src/extensions/multiverse/orchestrator/spawn-orchestrator.ts';
 import { ChildAdmissionRegistry } from '../../../../src/extensions/multiverse/runtime/child-admission.ts';
-import type { ChildInteractionOutcome } from '../../../../src/extensions/multiverse/runtime/child-hydration.ts';
+import type { ChildInteractionOutcome, ChildRuntime, RunChildInteractionInput } from '../../../../src/extensions/multiverse/runtime/child-runtime.ts';
 import type { ChildSessionRepository } from '../../../../src/extensions/multiverse/runtime/child-session-repository.ts';
 import { childInteraction } from '../interaction-fixture.ts';
 
@@ -65,16 +65,19 @@ const makeDependencies = (
     subagentReasoning: () => undefined,
     getSubAgent: () => ({ enabled: true, agent: definition }),
     resolveContinuation: () => childInteraction({ checkpointAfter: 'prior-leaf' }),
-    hydrate: (async input => {
-      active++;
-      harness.peak = Math.max(harness.peak, active);
-      harness.prompts.push(input.prompt);
-      try {
-        return hydrateImpl ? await hydrateImpl(input) : outcome();
-      } finally {
-        active--;
-      }
-    }) as SpawnOrchestratorDependencies['hydrate'],
+    // One stubbed ChildRuntime stands in for the whole SDK child interaction.
+    runtime: {
+      run: async (input: RunChildInteractionInput) => {
+        active++;
+        harness.peak = Math.max(harness.peak, active);
+        harness.prompts.push(input.prompt);
+        try {
+          return hydrateImpl ? await hydrateImpl(input) : outcome();
+        } finally {
+          active--;
+        }
+      },
+    } as unknown as ChildRuntime,
     ...overrides,
   };
 };
@@ -231,19 +234,15 @@ describe('runSpawn', () => {
     const state = harness();
     const snapshots: string[] = [];
 
-    await runSpawn(
-      { context: 'shared context', tasks: [{ action: 'create', agent: 'fixer', task: 'x' }] },
-      makeDependencies(state),
-      {
-        onProgress: progress =>
-          snapshots.push(
-            progress
-              .snapshot()
-              .map(task => `${task.label}:${task.phase}`)
-              .join(','),
-          ),
-      },
-    );
+    await runSpawn({ context: 'shared context', tasks: [{ action: 'create', agent: 'fixer', task: 'x' }] }, makeDependencies(state), {
+      onProgress: progress =>
+        snapshots.push(
+          progress
+            .snapshot()
+            .map(task => `${task.label}:${task.phase}`)
+            .join(','),
+        ),
+    });
 
     expect(snapshots[0]).toBe('fixer task 1:queued');
     expect(snapshots).toContain('fixer task 1:waiting');

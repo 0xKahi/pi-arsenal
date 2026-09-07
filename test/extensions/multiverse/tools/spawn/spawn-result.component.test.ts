@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'bun:test';
 import type { ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
-import type { SpawnToolDetails } from '../../../../../src/extensions/multiverse/results/child-interaction.types.ts';
+import type { SpawnToolDetails } from '../../../../../src/extensions/multiverse/results/child-interaction.ts';
 import { createSpawnTool, type SpawnToolHost } from '../../../../../src/extensions/multiverse/tools/spawn/spawn.tool.ts';
 import { SpawnProgress } from '../../../../../src/extensions/multiverse/tools/spawn/spawn-progress.ts';
 import {
   buildSpawnRows,
   MAX_VISIBLE_TASK_ROWS,
-  type SpawnTaskRow,
   SpawnResultComponent,
+  type SpawnTaskRow,
   type SpawnTheme,
 } from '../../../../../src/extensions/multiverse/tools/spawn/spawn-result.component.ts';
 import { childInteraction } from '../../interaction-fixture.ts';
