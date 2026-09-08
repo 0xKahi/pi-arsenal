@@ -11,6 +11,11 @@ export interface ResultEnvelope {
 /** States the fact and stops. Offers no remedy, because output this large is a malfunction. */
 const TRUNCATION_NOTICE = 'truncated: output exceeded the size cap and was cut';
 
+/** Generate once before dispatch; keep it out of all child prompts and context. */
+export function createBoundaryNonce(): string {
+  return randomBytes(RESULT_BOUNDARY_NONCE_BYTES).toString('hex');
+}
+
 /**
  * Frame each child body with a per-call boundary nonce.
  *
@@ -25,8 +30,7 @@ const TRUNCATION_NOTICE = 'truncated: output exceeded the size cap and was cut';
  * session-file paths, and telemetry are deliberately absent; they live in tool details
  * and the durable manifest for the user.
  */
-export function buildResultEnvelope(interactions: readonly ChildInteraction[]): ResultEnvelope {
-  const nonce = randomBytes(RESULT_BOUNDARY_NONCE_BYTES).toString('hex');
+export function buildResultEnvelope(interactions: readonly ChildInteraction[], nonce = createBoundaryNonce()): ResultEnvelope {
   const frames = interactions.map((interaction, index) => renderFrame(interaction, index + 1, nonce));
   const content = [`Spawn results (${interactions.length}) · boundary ${nonce}`, ...frames].join('\n\n');
 

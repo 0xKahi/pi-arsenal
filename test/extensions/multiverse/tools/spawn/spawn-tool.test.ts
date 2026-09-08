@@ -95,7 +95,7 @@ describe('createSpawnTool', () => {
       }),
     );
 
-    await tool.execute(
+    const result = await tool.execute(
       'call-1',
       validInput as never,
       undefined,
@@ -114,6 +114,11 @@ describe('createSpawnTool', () => {
     expect(updates.join('\n')).not.toContain('secret child output');
 
     const details = detailUpdates.at(-1) as { progress?: Array<{ index: number; label: string; agent: string; phase: string }> };
+    expect(detailUpdates.at(-1)).toMatchObject({ boundaryNonce: result.details.boundaryNonce });
+    expect(result.details.boundaryNonce).toBeString();
+    const content = result.content[0];
+    expect(content?.type === 'text' ? content.text : '').toContain(`boundary ${result.details.boundaryNonce}`);
+    expect(content?.type === 'text' ? content.text : '').toContain(`--TASK_1_RESPONSE-${result.details.boundaryNonce}--`);
     expect(details.progress).toHaveLength(1);
     expect(details.progress?.[0]).toMatchObject({ index: 0, label: 'implement', agent: 'fixer', action: 'create', phase: 'waiting' });
   });

@@ -85,6 +85,38 @@ describe('buildSpawnRows', () => {
 });
 
 describe('SpawnResultComponent', () => {
+  it('renders the batch header and lifecycle without a footer until a child settles', () => {
+    const progress = new SpawnProgress([
+      { label: 'fix', agent: 'fixer', action: 'create' },
+      { label: 'inspect', agent: 'explorer', action: 'continue' },
+    ], () => 0);
+    progress.start(0);
+    progress.start(1);
+    const component = new SpawnResultComponent(theme, () => {});
+    const update = () => {
+      component.update(buildSpawnRows({ args, details: details(progress), now: 1000 }), false, 'boundary-nonce');
+      return component.render(120).join('\n');
+    };
+    expect(update()).toBe([
+      'spawn boundary-nonce (2)',
+      '├─ fixer (1) · new · 1.0s',
+      '│  0 tools · ⠋ waiting',
+      '└─ explorer (2) · resume · 1.0s',
+      '   0 tools · ⠋ waiting',
+    ].join('\n'));
+    progress.observe(1, { type: 'tool_execution_start', toolCallId: 'read', toolName: 'read', args: { path: '~/file' } } as never);
+    expect(update()).toContain('⠋ read ~/file');
+    progress.observe(1, { type: 'tool_execution_end', toolCallId: 'read', toolName: 'read', isError: false } as never);
+    expect(update()).toContain('✓ read ~/file');
+    expect(update()).not.toContain('replied');
+    progress.settle(0, 'success');
+    expect(update()).toContain('↩ replied');
+    expect(update()).toEndWith(' 1 reply');
+    progress.settle(1, 'failure', 'model failure');
+    expect(update()).toEndWith(' 1 reply · 1 failed');
+    component.dispose();
+  });
+
   it('renders two lines per task plus a counts footer across mixed terminal states', () => {
     const clock = { value: 0 };
     const progress = new SpawnProgress(
@@ -106,8 +138,9 @@ describe('SpawnResultComponent', () => {
     expect(lines).toHaveLength(5);
     expect(lines[0]).toContain('fixer (1)');
     expect(lines[1]).toContain('↩ replied');
-    expect(lines[3]).toContain('✗ failed · model error');
-    expect(lines[4]).toContain('1 replied · 1 failed');
+    expect(lines[3]).toContain('✗ failed');
+    expect(lines[3]).not.toContain('model error');
+    expect(lines[4]).toContain(' 1 reply · 1 failed');
   });
 
   it('shows the completed tool outcome from isError while a task is still running', () => {
@@ -134,9 +167,9 @@ describe('SpawnResultComponent', () => {
 
     const output = render(buildSpawnRows({ args, details: settled }), true);
 
-    expect(output).toContain('prompt: implement the fix');
-    expect(output).toContain('activity: bash(git status) ✓');
-    expect(output).toContain('child: child-1');
+    expect(output).toContain('󰻞 prompt:\n│  implement the fix');
+    expect(output).toContain(' tool logs:\n│  - ✓ bash git status');
+    expect(output).toContain('✓ fixer (1)\n  ---\n  childSessionId: child-1');
     expect(output).toContain('checkpoints: none → leaf');
     expect(output).toContain('telemetry: anthropic/model');
     expect(output).toContain('truncated: cut from 9 lines / 99 bytes');
@@ -182,8 +215,8 @@ describe('SpawnResultComponent', () => {
 
     const lines = renderLines(rows);
 
-    expect(lines).toHaveLength(MAX_VISIBLE_TASK_ROWS * 2 + 2);
-    expect(lines.at(-2)).toContain('… 4 more tasks');
+    expect(lines).toHaveLength(MAX_VISIBLE_TASK_ROWS * 2 + 1);
+    expect(lines.at(-1)).toContain('… 4 more tasks');
   });
 
   it('degrades to plain text instead of throwing when rendering fails', () => {
@@ -238,6 +271,7 @@ describe('spawn renderResult', () => {
       { cwd: '/tmp' } as unknown as ExtensionContext,
     );
 
+    expect(result.details.boundaryNonce).toMatch(/^[0-9a-f]+$/);
     expect(result.details.progress?.[0]?.trail).toEqual([{ tool: 'bash', input: 'git diff' }]);
   });
 });

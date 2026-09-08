@@ -1,5 +1,6 @@
 import type { SubagentDefinition } from '../../agents/subagent-definition.ts';
-import { MAX_SPAWN_TASKS } from '../../tools/spawn/spawn.schema.ts';
+
+// import { MAX_SPAWN_TASKS } from '../../tools/spawn/spawn.schema.ts';
 
 const MEGAMIND_ROLE = `<Role>
 You are a workflow manager for coding work. Your job is to plan, schedule, delegate, monitor, reconcile, and verify specialist-agent work. You are not the default implementation worker.
@@ -48,10 +49,11 @@ When the routing threshold calls for delegation, build a short work graph before
 
 ### Task Delegation Discipline
 
-Can tasks be split into separate specialist work? Check against the enabled lanes in \`<Agents>\`:
-- Several searches across different domains, one per recon lane?
-- Several implementation instances, each scoped to its own folder?
-- Different lanes running side by side, such as visual analysis alongside code search?
+Can tasks be split into separate specialist work? Check against the enabled lanes in \`<Agents>\`.
+**examples**:
+- Need Several searches across different domains? -> multiple @explorer agents, one per recon lane. 
+- Have Several implementation instances? => multiple @fixer instances each scoped to its own folder.
+- Different lanes running side by side, such as visual analysis alongside code search? -> @explorer + @visualizer
 
 Balance: respect dependencies, avoid parallelizing what must be sequential, and avoid overlapping write ownership.
 
@@ -132,26 +134,16 @@ Task numbers in the boundaries are 1-based and match the order you supplied.
 - \`failure\` — an \`error:\` line explains why. The child session still exists and may be continued.
 - \`aborted\` — interrupted. Work up to the interruption is preserved and the child can be continued from where it stopped.
 
-### What results do not tell you
-There is no file-touch data. The envelope never reports what a child created, modified, or deleted. **Do not infer or assert what changed from a child's prose.** To know the actual state, read the working tree yourself.
-
-This matters most when reconciling parallel writer lanes: verify against the tree before you report an outcome to the user.
-
 ### After a batch
 Reconcile every writer lane before final validation. Resolve conflicts between overlapping reports by inspecting the tree, not by preferring the more confident child. Then gate any dependent lanes you deferred.
 
 </SpawnTool>`;
 
 /** Build once per activation from enabled agents; never include their child prompt bodies. */
-export function buildMegamindPrompt(roster: readonly SubagentDefinition[], maxConcurrency: number): string {
-  const pool = Math.max(1, Math.min(Math.floor(maxConcurrency) || 1, MAX_SPAWN_TASKS));
+export function buildMegamindPrompt(roster: readonly SubagentDefinition[], _maxConcurrency: number): string {
+  // const pool = Math.max(1, Math.min(Math.floor(maxConcurrency) || 1, MAX_SPAWN_TASKS));
   const agents = [
     '<Agents>',
-    '',
-    `${roster.length} specialist ${roster.length === 1 ? 'lane is' : 'lanes are'} enabled.`,
-    `A single call accepts up to ${MAX_SPAWN_TASKS} tasks and runs ${pool} of them at a time.`,
-    'Extra tasks queue and start automatically as soon as any slot frees, so put all independent work in one call.',
-    'Do not split a batch to stay under the pool size: a second call cannot begin until every task in the first has settled, which leaves slots idle.',
     '',
     ...roster.map(agent => [`@${agent.name}`, ...agent.metadata.map(line => `- ${line}`), ''].join('\n')),
     '</Agents>',

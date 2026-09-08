@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import type { Theme } from '@earendil-works/pi-coding-agent';
 import { buildSpawnRows, SpawnResultComponent } from '../../src/extensions/multiverse/tools/spawn/spawn-result.component.ts';
 import { P2pAskBatchResultComponent } from '../../src/extensions/p2p-council/tools/p2p-ask.tool.ts';
+import { childInteraction } from '../extensions/multiverse/interaction-fixture.ts';
 import { SPINNER_FRAMES, SPINNER_INTERVAL_MS, spinnerFrame, STATUS_SYMBOLS, treeConnector, treeContinuation } from '../../src/libs/tui-glyphs.ts';
 
 const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
@@ -12,7 +13,16 @@ describe('shared TUI glyphs', () => {
     ask.update({ kind: 'batch', entries: [{ to: 'alpha', state: 'success', from: 'alpha', reply: 'ok' }] }, [{ to: 'alpha', prompt: 'x' }], false);
     const spawn = new SpawnResultComponent(theme, () => {});
     spawn.update(
-      buildSpawnRows({ args: { context: 'c', tasks: [{ action: 'create', agent: 'fixer', task: 'x' }] }, details: undefined }),
+      buildSpawnRows({
+        args: {
+          context: 'c',
+          tasks: [
+            { action: 'create', agent: 'fixer', task: 'x' },
+            { action: 'create', agent: 'reviewer', task: 'y' },
+          ],
+        },
+        details: { version: 1, kind: 'spawn', interactions: [childInteraction({ taskIndex: 0, status: 'success' })] },
+      }),
       false,
     );
 

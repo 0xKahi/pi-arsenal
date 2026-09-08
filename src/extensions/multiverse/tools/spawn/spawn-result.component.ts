@@ -49,6 +49,7 @@ export class SpawnResultComponent implements Component {
   private rows: SpawnTaskRow[] = [];
   private expanded = false;
   private tick = 0;
+  private boundaryNonce?: string;
   private timer: ReturnType<typeof setInterval> | undefined;
 
   public constructor(
@@ -56,7 +57,8 @@ export class SpawnResultComponent implements Component {
     private readonly requestRender: () => void,
   ) {}
 
-  public update(rows: SpawnTaskRow[], expanded: boolean): void {
+  public update(rows: SpawnTaskRow[], expanded: boolean, boundaryNonce?: string): void {
+    this.boundaryNonce = boundaryNonce;
     this.rows = rows;
     this.expanded = expanded;
     const unsettled = rows.some(row => UNSETTLED.has(row.phase));
@@ -90,16 +92,29 @@ export class SpawnResultComponent implements Component {
 
   private renderRows(safeWidth: number): string[] {
     const lines: string[] = [];
-    const visible = this.rows.slice(0, MAX_VISIBLE_TASK_ROWS);
+    if (this.boundaryNonce)
+      lines.push(
+        truncateToWidth(
+          this.theme.fg('toolTitle', this.theme.bold('spawn')) +
+            ' ' +
+            this.theme.fg('text', plain(this.boundaryNonce)) +
+            ' ' +
+            this.theme.fg('syntaxNumber', `(${this.rows.length})`),
+          safeWidth,
+          '',
+        ),
+      );
+    const visible = this.expanded ? this.rows : this.rows.slice(0, MAX_VISIBLE_TASK_ROWS);
     visible.forEach((row, position) => {
-      const isLast = position === visible.length - 1 && this.rows.length <= MAX_VISIBLE_TASK_ROWS;
+      const isLast = position === this.rows.length - 1;
       lines.push(...this.renderRow(row, isLast, safeWidth));
     });
     const hidden = this.rows.length - visible.length;
     if (hidden > 0) {
       lines.push(truncateToWidth(this.theme.fg('dim', `${treeConnector(true)}… ${hidden} more task${hidden === 1 ? '' : 's'}`), safeWidth, ''));
     }
-    lines.push(this.renderFooter(safeWidth));
+    const footer = this.renderFooter(safeWidth);
+    if (footer) lines.push(footer);
     if (this.expanded) lines.push(...this.renderExpanded(safeWidth));
     return lines;
   }
@@ -119,7 +134,7 @@ export class SpawnResultComponent implements Component {
       separator +
       this.theme.fg('dim', formatElapsed(row));
 
-    const indent = `${treeContinuation(isLast)}  `;
+    const indent = treeContinuation(isLast);
     const activity =
       this.theme.fg('muted', `${row.toolUses} tool${row.toolUses === 1 ? '' : 's'}`) +
       separator +
@@ -127,7 +142,31 @@ export class SpawnResultComponent implements Component {
       ' ' +
       this.theme.fg(activityColor(row), plain(describeActivity(row)));
 
-    return [truncateToWidth(header, safeWidth, ''), truncateToWidth(this.theme.fg('dim', indent) + activity, safeWidth, '')];
+    const lines = [truncateToWidth(header, safeWidth, ''), truncateToWidth(this.theme.fg('dim', indent) + activity, safeWidth, '')];
+    if (this.expanded) {
+      const add = (text: string) => {
+        for (const line of wrapTextWithAnsi(plain(text), Math.max(1, safeWidth - indent.length))) {
+          lines.push(truncateToWidth(this.theme.fg('dim', indent + line), safeWidth, ''));
+        }
+      };
+      add(' tool logs:');
+      if (row.toolUses > row.trail.length) add(`… ${row.toolUses - row.trail.length} earlier calls omitted`);
+      for (const entry of row.trail) {
+        const symbol =
+          entry.isError === undefined
+            ? UNSETTLED.has(row.phase)
+              ? spinnerFrame(this.tick)
+              : STATUS_SYMBOLS.pending
+            : entry.isError
+              ? STATUS_SYMBOLS.failure
+              : STATUS_SYMBOLS.success;
+        add(`- ${symbol} ${entry.tool}${entry.input ? ` ${entry.input}` : ''}`);
+      }
+      add('');
+      add('󰻞 prompt:');
+      add(row.prompt ?? '');
+    }
+    return lines;
   }
 
   private renderFooter(safeWidth: number): string {
@@ -139,11 +178,10 @@ export class SpawnResultComponent implements Component {
       else counts.running += 1;
     }
     const parts: string[] = [];
-    if (counts.replied > 0 || (counts.failed === 0 && counts.running === 0 && counts.queued === 0)) parts.push(`${counts.replied} replied`);
+    if (counts.replied > 0) parts.push(`${counts.replied} ${counts.replied === 1 ? 'reply' : 'replies'}`);
     if (counts.failed > 0) parts.push(`${counts.failed} failed`);
-    if (counts.running > 0) parts.push(`${counts.running} running`);
-    if (counts.queued > 0) parts.push(`${counts.queued} queued`);
-    return truncateToWidth(this.theme.fg('success', `${STATUS_SYMBOLS.replied} `) + this.theme.fg('muted', parts.join(' · ')), safeWidth, '');
+    if (parts.length === 0) return '';
+    return truncateToWidth(this.theme.fg('muted', ` ${parts.join(' · ')}`), safeWidth, '');
   }
 
   /**
@@ -154,20 +192,23 @@ export class SpawnResultComponent implements Component {
     const lines: string[] = [];
     for (const row of this.rows) {
       const interaction = row.interaction;
+      if (UNSETTLED.has(row.phase)) continue;
+      lines.push('');
       const symbolColor: ThemeColor = row.phase === 'failed' ? 'error' : row.phase === 'replied' ? 'success' : 'accent';
       const symbol = row.phase === 'failed' ? STATUS_SYMBOLS.failure : row.phase === 'replied' ? STATUS_SYMBOLS.success : STATUS_SYMBOLS.pending;
       lines.push(
         truncateToWidth(
-          `${this.theme.fg(symbolColor, symbol)} ${this.theme.fg('syntaxNumber', `${row.index + 1}.`)} ${this.theme.fg('text', plain(row.label))}`,
+          `${this.theme.fg(symbolColor, symbol)} ${this.theme.fg('text', plain(row.agent))} ${this.theme.fg('syntaxNumber', `(${row.index + 1})`)}`,
           safeWidth,
           '',
         ),
       );
-      if (row.prompt) lines.push(...this.wrapField(safeWidth, 'prompt', row.prompt, 'dim'));
-      if (row.trail.length > 0) lines.push(...this.wrapField(safeWidth, 'activity', formatTrail(row.trail), 'dim'));
+      lines.push(truncateToWidth('  ---', safeWidth, ''));
       const child = interaction?.childSessionId || (row.action === 'continue' ? 'unreachable' : 'none');
-      lines.push(...this.wrapField(safeWidth, 'child', child, 'muted'));
+      lines.push(...this.wrapField(safeWidth, 'childSessionId', child, 'muted'));
       if (interaction) {
+        lines.push(...this.wrapField(safeWidth, 'status', interaction.status, 'muted'));
+        lines.push(...this.wrapField(safeWidth, 'interactionId', interaction.interactionId, 'muted'));
         lines.push(
           ...this.wrapField(
             safeWidth,
@@ -196,7 +237,7 @@ export class SpawnResultComponent implements Component {
           );
         }
       }
-      // Envelope boundary markup is a model-facing construct and never rendered here.
+      lines.push(truncateToWidth('  ---', safeWidth, ''));
       const body = row.error ?? interaction?.error ?? interaction?.body ?? '';
       if (body) lines.push(...this.wrapBody(safeWidth, body, row.phase === 'failed' ? 'error' : 'toolOutput'));
     }
@@ -221,7 +262,7 @@ export class SpawnResultComponent implements Component {
     if (row.phase === 'queued') return STATUS_SYMBOLS.pending;
     if (row.phase === 'replied') return STATUS_SYMBOLS.replied;
     if (row.phase === 'failed') return STATUS_SYMBOLS.failure;
-    if (row.phase === 'running' && !row.toolRunning) return row.lastToolError ? STATUS_SYMBOLS.failure : STATUS_SYMBOLS.success;
+    if (row.phase === 'running' && row.currentTool && !row.toolRunning) return row.lastToolError ? STATUS_SYMBOLS.failure : STATUS_SYMBOLS.success;
     return spinnerFrame(this.tick);
   }
 
@@ -235,6 +276,7 @@ function activityColor(row: SpawnTaskRow): ThemeColor {
   if (row.phase === 'failed') return 'error';
   if (row.phase === 'replied') return 'success';
   if (row.phase === 'queued') return 'dim';
+  if (row.currentTool && !row.toolRunning) return row.lastToolError ? 'error' : 'success';
   return 'accent';
 }
 
@@ -247,19 +289,10 @@ function describeActivity(row: SpawnTaskRow): string {
     case 'replied':
       return 'replied';
     case 'failed':
-      return row.error ? `failed · ${row.error}` : 'failed';
+      return 'failed';
     default:
       return row.currentTool ? `${row.currentTool}${row.currentToolInput ? ` ${row.currentToolInput}` : ''}` : 'waiting';
   }
-}
-
-function formatTrail(trail: readonly ToolTrailEntry[]): string {
-  return trail
-    .map(entry => {
-      const mark = entry.isError === undefined ? '' : ` ${entry.isError ? STATUS_SYMBOLS.failure : STATUS_SYMBOLS.success}`;
-      return `${entry.tool}${entry.input ? `(${entry.input})` : ''}${mark}`;
-    })
-    .join(' · ');
 }
 
 function formatElapsed(row: SpawnTaskRow): string {

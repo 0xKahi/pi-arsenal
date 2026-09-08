@@ -57,7 +57,7 @@ export const MAX_TOOL_INPUT_CHARS = 80;
  */
 export class SpawnProgress {
   private readonly tasks: TaskProgress[];
-  private readonly runningTools = new Map<string, { index: number; trailIndex: number }>();
+  private readonly runningTools = new Map<string, { index: number; entry: ToolTrailEntry }>();
   private now: () => number;
 
   constructor(tasks: Array<Pick<TaskProgress, 'label' | 'agent' | 'action'>>, now: () => number = Date.now) {
@@ -90,15 +90,16 @@ export class SpawnProgress {
 
   observe(index: number, event: AgentSessionEvent): void {
     const task = this.tasks[index];
-    if (!task) return;
+    if (!task || task.outcome) return;
     if (event.type === 'agent_start') {
       if (task.phase === 'queued') task.startedAt ??= this.now();
-      if (task.phase === 'queued') task.phase = 'waiting';
+      task.phase = task.currentTool ? 'running' : 'waiting';
+      task.settledAt = undefined;
       return;
     }
     if (event.type === 'agent_end') {
-      if (task.phase === 'waiting' || task.phase === 'running') task.phase = 'replied';
-      task.toolRunning = false;
+      // The runtime settles the authoritative outcome after retries and cleanup.
+      // Do not briefly advertise a reply for an error/aborted low-level run.
       return;
     }
     if (event.type === 'tool_execution_start') {
@@ -112,17 +113,20 @@ export class SpawnProgress {
       task.trail.push(entry);
       // Keep only the newest calls so a long-running child cannot grow parent details.
       if (task.trail.length > MAX_TOOL_TRAIL_ENTRIES) task.trail.shift();
-      this.runningTools.set(event.toolCallId, { index, trailIndex: task.trail.indexOf(entry) });
+      this.runningTools.set(`${index}:${event.toolCallId}`, { index, entry });
       return;
     }
     if (event.type === 'tool_execution_end') {
-      task.toolRunning = false;
-      task.lastToolError = event.isError === true;
-      task.currentTool = event.toolName;
-      const pending = this.runningTools.get(event.toolCallId);
-      this.runningTools.delete(event.toolCallId);
-      const entry = pending ? task.trail[pending.trailIndex] : task.trail.findLast(item => item.tool === event.toolName);
-      if (entry && entry.tool === event.toolName) entry.isError = event.isError === true;
+      const key = `${index}:${event.toolCallId}`;
+      const pending = this.runningTools.get(key);
+      this.runningTools.delete(key);
+      if (pending) pending.entry.isError = event.isError === true;
+      const active = [...this.runningTools.values()].findLast(item => item.index === index);
+      const displayed = active?.entry ?? pending?.entry;
+      task.toolRunning = active !== undefined;
+      task.lastToolError = active ? undefined : event.isError === true;
+      task.currentTool = displayed?.tool ?? event.toolName;
+      task.currentToolInput = displayed?.input;
     }
   }
 
@@ -134,6 +138,9 @@ export class SpawnProgress {
     task.error = error;
     task.toolRunning = false;
     task.settledAt = this.now();
+    for (const [key, pending] of this.runningTools) {
+      if (pending.index === index) this.runningTools.delete(key);
+    }
   }
 
   snapshot(): TaskProgress[] {
@@ -155,7 +162,7 @@ export function summarizeToolInput(args: unknown): string | undefined {
   return flattened.length > MAX_TOOL_INPUT_CHARS ? `${flattened.slice(0, MAX_TOOL_INPUT_CHARS - 1)}…` : flattened;
 }
 
-const SUMMARY_KEYS = ['command', 'file_path', 'filePath', 'path', 'pattern', 'query', 'url', 'name', 'description'];
+const SUMMARY_KEYS = ['command', 'pattern', 'file_path', 'filePath', 'path', 'query', 'url', 'name', 'description'];
 
 function pickSummaryValue(args: unknown): string | undefined {
   if (typeof args === 'string') return args;

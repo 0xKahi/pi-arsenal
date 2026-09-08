@@ -60,6 +60,8 @@ export interface ChildInteraction {
 export interface SpawnToolDetails {
   version: typeof CHILD_INTERACTION_VERSION;
   kind: 'spawn';
+  /** Result-envelope boundary nonce, also displayed in the live batch header. */
+  boundaryNonce?: string;
   interactions: ChildInteraction[];
   progress?: TaskProgress[];
 }

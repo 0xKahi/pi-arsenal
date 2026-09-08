@@ -1,11 +1,11 @@
 import type { AgentToolResult } from '@earendil-works/pi-agent-core';
 import type { ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent';
-import { Container } from '@earendil-works/pi-tui';
+import { Container, Text } from '@earendil-works/pi-tui';
 import { CHILD_INTERACTION_VERSION, SPAWN_TOOL_NAME } from '../../constants.ts';
 import type { SpawnOrchestratorDependencies, SpawnRunResult } from '../../orchestrator/spawn-orchestrator.ts';
 import { runSpawn } from '../../orchestrator/spawn-orchestrator.ts';
 import { isSpawnToolDetails, type SpawnToolDetails } from '../../results/child-interaction.ts';
-import { buildResultEnvelope } from '../../results/result-envelope.ts';
+import { buildResultEnvelope, createBoundaryNonce } from '../../results/result-envelope.ts';
 import { describeTask, type SpawnInput, spawnParameters, validateSpawnInput } from './spawn.schema.ts';
 import {
   type ManifestSink,
@@ -55,6 +55,7 @@ export function createSpawnTool(host: SpawnToolHost): ToolDefinition<typeof spaw
       // Preflight: reject before dispatch so a bad call leaves no children and no manifest.
       const input: SpawnInput = validateSpawnInput(params, { availableAgents: host.availableAgents() });
 
+      const boundaryNonce = createBoundaryNonce();
       const writer = new SpawnManifestWriter();
       const startedAt = Date.now();
       writer.markDispatched();
@@ -68,7 +69,7 @@ export function createSpawnTool(host: SpawnToolHost): ToolDefinition<typeof spaw
           onProgress: progress =>
             onUpdate?.({
               content: [{ type: 'text', text: PARTIAL_RECEIPT }],
-              details: { version: CHILD_INTERACTION_VERSION, kind: 'spawn', interactions: [], progress: progress.snapshot() },
+              details: { version: CHILD_INTERACTION_VERSION, kind: 'spawn', boundaryNonce, interactions: [], progress: progress.snapshot() },
             }),
         });
       } catch (error) {
@@ -80,25 +81,37 @@ export function createSpawnTool(host: SpawnToolHost): ToolDefinition<typeof spaw
       const details: SpawnToolDetails = {
         version: CHILD_INTERACTION_VERSION,
         kind: 'spawn',
+        boundaryNonce,
         interactions: run.interactions,
         progress: run.progress.snapshot(),
       };
       writeManifest(host, writer, buildManifest(input, run.interactions, run.aborted ? 'aborted' : 'completed', Date.now() - startedAt));
 
       return {
-        content: [{ type: 'text', text: buildResultEnvelope(run.interactions).content }],
+        content: [{ type: 'text', text: buildResultEnvelope(run.interactions, boundaryNonce).content }],
         details,
       };
     },
     renderCall() {
       return new Container();
     },
-    renderResult(result, { expanded }, theme, context) {
+    renderResult(result, { expanded, isPartial }, theme, context) {
       const details = isSpawnToolDetails(result.details) ? result.details : undefined;
       // Reuse the live component across renders so spinner and timer state survive.
       const prior = context?.lastComponent;
       const component = prior instanceof SpawnResultComponent ? prior : new SpawnResultComponent(theme, context?.invalidate ?? (() => {}));
-      component.update(buildSpawnRows({ args: context?.args, details }), expanded);
+      if (!details && !isPartial) {
+        component.dispose();
+        return new Text(
+          result.content
+            .filter(item => item.type === 'text')
+            .map(item => item.text)
+            .join('\n'),
+          0,
+          0,
+        );
+      }
+      component.update(buildSpawnRows({ args: context?.args, details }), expanded, details?.boundaryNonce);
       return component;
     },
   };

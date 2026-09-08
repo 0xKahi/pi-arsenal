@@ -81,14 +81,34 @@ describe('SpawnProgress', () => {
     expect(second?.error).toBe('stopped');
   });
 
-  it('marks a replied task from agent_end and ignores unobserved event types', () => {
+  it('waits for authoritative settlement after agent_end and ignores unobserved event types', () => {
     const progress = progressFor({ value: 0 });
     progress.start(0);
     progress.observe(0, { type: 'message_end', message: { role: 'assistant', content: 'secret' } } as unknown as AgentSessionEvent);
     expect(JSON.stringify(progress.snapshot())).not.toContain('secret');
 
     progress.observe(0, { type: 'agent_end', messages: [] } as unknown as AgentSessionEvent);
-    expect(progress.snapshot()[0]?.phase).toBe('replied');
+    expect(progress.snapshot()[0]?.phase).toBe('waiting');
+    progress.settle(0, 'failure', 'provider failed');
+    expect(progress.snapshot()[0]?.phase).toBe('failed');
+  });
+
+  it('matches concurrent tool completions by task and call ID, even after trail eviction', () => {
+    const progress = progressFor({ value: 0 });
+    progress.start(0);
+    progress.start(1);
+    progress.observe(0, startEvent('read', { path: 'first' }, 'same'));
+    progress.observe(1, startEvent('read', { path: 'other child' }, 'same'));
+    for (let call = 0; call < MAX_TOOL_TRAIL_ENTRIES; call++) {
+      progress.observe(0, startEvent('read', { path: `file-${call}` }, `${call}`));
+    }
+    progress.observe(0, endEvent('read', true, 'same'));
+    expect(progress.snapshot()[0]?.toolRunning).toBe(true);
+    expect(progress.snapshot()[0]?.currentToolInput).toBe(`file-${MAX_TOOL_TRAIL_ENTRIES - 1}`);
+    expect(progress.snapshot()[0]?.trail.every(entry => entry.isError === undefined)).toBe(true);
+    progress.observe(1, endEvent('read', false, 'same'));
+    expect(progress.snapshot()[1]?.trail[0]?.isError).toBe(false);
+    expect(progress.snapshot()[1]?.currentToolInput).toBe('other child');
   });
 
   it('caps the persisted trail and truncates stored tool inputs at store time', () => {
