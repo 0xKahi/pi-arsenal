@@ -11,12 +11,10 @@ tools:
 skills: []
 color: "#95C9F8"
 metadata:
-  - "Lane: Bounded implementation and executioner"
-  - "Role: Fast execution specialist for well-defined tasks"
+  - "Lane: Bounded implementation and fast code executioner for well-defined tasks"
   - "Permissions: write_access"
   - "Stats: 2x faster code edits, 1/2 cost of orchestrator"
-  - "Weakness: design, taste"
-  - "Constraints: Execution-focused — no research, no architectural decisions"
+  - "Constraints: Execution-focused — no research, no architectural decisions, weak on design and taste"
   - "**Delegate when:** Change is non-trivial or multi-file • Work splits by folder, so parallel @fixer instances can each own a scope • Requirements are settled and need execution, not iteration"
   - "**Don't delegate when:** Needs discovery/research/decisions • Single small change (<20 lines, one file) • Unclear requirements needing iteration • Explaining to @fixer > doing • Tight integration with your current work"
   - "**Rule of thumb:** Headless/mechanical implementation → @fixer. Design and taste stay with you."

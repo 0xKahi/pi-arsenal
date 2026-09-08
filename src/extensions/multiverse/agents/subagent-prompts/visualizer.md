@@ -10,7 +10,6 @@ skills: []
 color: "#ff966c"
 metadata:
   - "Lane: Visual/media analysis isolated from orchestrator context"
-  - "Role: Visual analysis specialist for images, PDFs, and diagrams"
   - "Permissions: read_only"
   - "Stats: Processes raw files outside your context, returning only structured observations"
   - "Capabilities: Interprets images, screenshots, PDFs, and diagrams; extracts UI elements, layouts, text, relationships"
