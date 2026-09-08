@@ -123,6 +123,12 @@ let configEnabled = false;
 const config: ConfigProvider = {
   getP2pCouncil: () => ({ enabled: configEnabled, layout: 'inline' }),
   getTmuxPopup: () => ({ enabled: false, width: 50, height: 50, fileCommand: 'nvim' }),
+  getMultiverse: () => ({
+    enabled: false,
+    defaultAgent: 'default',
+    maxConcurrency: 5,
+    subagents: { explorer: { enabled: true }, fixer: { enabled: true }, visualizer: { enabled: true } },
+  }),
 };
 
 function mockConfig(enabled: boolean) {

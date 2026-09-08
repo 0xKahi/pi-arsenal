@@ -1,0 +1,77 @@
+import { describe, expect, it } from 'bun:test';
+import {
+  buildChildPrompt,
+  describeTask,
+  MAX_SPAWN_TASKS,
+  spawnParameters,
+  validateSpawnInput,
+} from '../../../../../src/extensions/multiverse/tools/spawn/spawn.schema.ts';
+
+const options = { availableAgents: ['fixer'] };
+
+describe('spawn input validation', () => {
+  it('accepts ordered create and continue variants', () => {
+    const parsed = validateSpawnInput(
+      {
+        context: 'shared context',
+        tasks: [
+          { action: 'create', agent: 'fixer', task: 'implement' },
+          { action: 'continue', childSessionId: 'child-1', task: 'follow up' },
+        ],
+      },
+      options,
+    );
+
+    expect(parsed.tasks.map(task => task.action)).toEqual(['create', 'continue']);
+    expect(parsed.tasks[1]).toMatchObject({ action: 'continue', childSessionId: 'child-1' });
+    expect(spawnParameters.type).toBe('object');
+  });
+
+  it('accepts any registered string name instead of a bundled enum', () => {
+    const input = { context: 'shared', tasks: [{ action: 'create' as const, agent: 'researcher', task: 'investigate' }] };
+    expect(validateSpawnInput(input, { availableAgents: ['researcher'] })).toEqual(input);
+    expect(() => validateSpawnInput(input, { availableAgents: [] })).toThrow('unavailable agent');
+    expect(JSON.stringify(spawnParameters)).not.toContain('explorer');
+    expect(JSON.stringify(spawnParameters)).not.toContain('visualizer');
+  });
+
+  it('bounds the batch size in both the published schema and preflight validation', () => {
+    const tasks = Array.from({ length: MAX_SPAWN_TASKS + 1 }, () => ({ action: 'create', agent: 'fixer', task: 'x' }));
+
+    expect((spawnParameters.properties.tasks as { maxItems?: number }).maxItems).toBe(MAX_SPAWN_TASKS);
+    expect(() => validateSpawnInput({ context: 'shared', tasks }, options)).toThrow(`at most ${MAX_SPAWN_TASKS}`);
+    expect(() => validateSpawnInput({ context: 'shared', tasks: tasks.slice(0, MAX_SPAWN_TASKS) }, options)).not.toThrow();
+  });
+
+  it.each([
+    ['empty array', { context: 'x', tasks: [] }],
+    ['ambiguous variant', { context: 'x', tasks: [{ action: 'create', agent: 'fixer', childSessionId: 'x', task: 'x' }] }],
+    ['unknown agent', { context: 'x', tasks: [{ action: 'create', agent: 'unknown', task: 'x' }] }],
+    [
+      'duplicate continue',
+      {
+        context: 'x',
+        tasks: [
+          { action: 'continue', childSessionId: 'same', task: 'x' },
+          { action: 'continue', childSessionId: 'same', task: 'x' },
+        ],
+      },
+    ],
+    ['unknown field', { context: 'x', tasks: [{ action: 'create', agent: 'fixer', task: 'x', extra: true }] }],
+  ])('rejects %s before dispatch', (_label, input) => {
+    expect(() => validateSpawnInput(input, options)).toThrow('rejected before dispatch');
+  });
+});
+
+describe('buildChildPrompt', () => {
+  it('passes shared context and task-specific text to an interaction', () => {
+    const prompt = buildChildPrompt(' shared context ', { action: 'create', agent: 'fixer', task: 'implement narrowly' });
+
+    expect(prompt).toBe('shared context\n\nimplement narrowly');
+  });
+
+  it('labels tasks by agent or continuation target', () => {
+    expect(describeTask({ action: 'create', agent: 'fixer', task: 'x' }, 0)).toBe('fixer task 1');
+    expect(describeTask({ action: 'continue', childSessionId: 'child-1', task: 'x' }, 1)).toBe('continue child-1');
+  });
+});

@@ -31,6 +31,12 @@ describe('registerTmuxPopup', () => {
   const config: ConfigProvider = {
     getP2pCouncil: () => ({ enabled: false, layout: 'inline' }),
     getTmuxPopup: () => ({ enabled, width: 50, height: 50, fileCommand: 'nvim' }),
+    getMultiverse: () => ({
+      enabled: false,
+      defaultAgent: 'default',
+      maxConcurrency: 5,
+      subagents: { explorer: { enabled: true }, fixer: { enabled: true }, visualizer: { enabled: true } },
+    }),
   };
 
   beforeEach(() => {

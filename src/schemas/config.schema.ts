@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MultiverseConfigPartialSchema, MultiverseConfigSchema } from './multiverse.config.schema';
 import { P2pCouncilConfigPartialSchema, P2pCouncilConfigSchema } from './p2p-council.config.schema';
 import { TmuxPopupConfigPartialSchema, TmuxPopupConfigSchema } from './tmux-popup.config.schema';
 
@@ -14,6 +15,16 @@ export const ConfigSchema = z.object({
     enabled: false,
     layout: 'inline',
   }),
+  multiverse: MultiverseConfigSchema.default({
+    enabled: false,
+    defaultAgent: 'default',
+    maxConcurrency: 5,
+    subagents: {
+      explorer: { enabled: true },
+      fixer: { enabled: true },
+      visualizer: { enabled: true },
+    },
+  }),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -26,6 +37,7 @@ export const ConfigPartialSchema = z.object({
   $schema: z.string().optional(),
   tmux_popup: TmuxPopupConfigPartialSchema.optional(),
   p2p_council: P2pCouncilConfigPartialSchema.optional(),
+  multiverse: MultiverseConfigPartialSchema.optional(),
 });
 
 export type ConfigPartial = z.infer<typeof ConfigPartialSchema>;

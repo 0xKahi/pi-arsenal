@@ -1,12 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, type Theme } from '@earendil-works/pi-coding-agent';
 import { visibleWidth } from '@earendil-works/pi-tui';
-import {
-  createP2pAskTool,
-  P2P_ASK_SPINNER_FRAMES,
-  P2P_ASK_SPINNER_INTERVAL_MS,
-  P2pAskBatchResultComponent,
-} from '../../../../src/extensions/p2p-council/tools/p2p-ask.tool';
+import { SPINNER_FRAMES, SPINNER_INTERVAL_MS } from '../../../../src/libs/tui-glyphs.ts';
+import { createP2pAskTool, P2pAskBatchResultComponent } from '../../../../src/extensions/p2p-council/tools/p2p-ask.tool';
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -249,10 +245,10 @@ describe('p2p_ask batch renderer', () => {
     let invalidations = 0;
     const component = new P2pAskBatchResultComponent(plainTheme, () => invalidations++);
     component.update({ kind: 'batch', entries: [{ to: 'alpha', state: 'pending' }] }, [{ to: 'alpha', prompt: 'wait' }], false);
-    expect(component.render(80).join('\n')).toContain(`${P2P_ASK_SPINNER_FRAMES[0]} alpha`);
-    await Bun.sleep(P2P_ASK_SPINNER_INTERVAL_MS + 20);
+    expect(component.render(80).join('\n')).toContain(`${SPINNER_FRAMES[0]} alpha`);
+    await Bun.sleep(SPINNER_INTERVAL_MS + 20);
     expect(invalidations).toBeGreaterThanOrEqual(1);
-    expect(component.render(80).join('\n')).toContain(`${P2P_ASK_SPINNER_FRAMES[1]} alpha`);
+    expect(component.render(80).join('\n')).toContain(`${SPINNER_FRAMES[1]} alpha`);
 
     component.update(
       { kind: 'batch', entries: [{ to: 'alpha', state: 'success', from: 'alpha', reply: 'done' }] },
@@ -260,7 +256,7 @@ describe('p2p_ask batch renderer', () => {
       false,
     );
     const stoppedAt = invalidations;
-    await Bun.sleep(P2P_ASK_SPINNER_INTERVAL_MS + 20);
+    await Bun.sleep(SPINNER_INTERVAL_MS + 20);
     expect(invalidations).toBe(stoppedAt);
   });
 });
