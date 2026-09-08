@@ -141,12 +141,13 @@ describe('Multiverse activation lifecycle', () => {
     };
   };
 
-  it('registers without runtime API calls and resolves availability after config initialization', () => {
+  it('registers without runtime API calls and resolves availability after config initialization', async () => {
     const runtime = setup([], false);
     runtime.setConfig(MultiverseConfigSchema.parse({ enabled: true, defaultAgent: 'megamind', maxConcurrency: 2 }));
     runtime.start();
     expect(runtime.activation.parentAgentState.getActive()).toBe('megamind');
     expect(runtime.turn()?.systemPrompt).toContain('@researcher');
+    await Bun.sleep(20);
     expect(runtime.agentNameEvents).toEqual(['MEGAMIND']);
   });
 
@@ -160,7 +161,7 @@ describe('Multiverse activation lifecycle', () => {
     const mutations = runtime.selections.length;
     const first = runtime.turn();
     expect(first?.systemPrompt).toContain('@researcher');
-    expect(first?.systemPrompt).not.toContain('- Tools:');
+    expect(first?.systemPrompt).toContain('- Tools: read, missing');
     expect(runtime.turn()).toEqual(first);
     await runtime.spawn();
     expect(runtime.executions[0]?.getSubAgent('researcher')?.agent.prompt).toBe('original child prompt');

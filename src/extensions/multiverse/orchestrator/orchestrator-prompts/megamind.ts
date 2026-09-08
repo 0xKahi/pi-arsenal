@@ -26,7 +26,7 @@ Review available agents and lane rules. Before beginning non-trivial work, ident
 - Handle directly only for one isolated, clear, low-risk action where delegation would cost more than execution.
 - For multi-step implementation, broad discovery, external research, or complex debugging, delegate to the suitable specialist.
 - If two or more parts can proceed independently, dispatch them in parallel before starting dependent work.
-- Do not delegate merely because an agent exists. Do not keep substantive work entirely in the orchestrator merely because each individual step seems easy.
+- **DO NOT** delegate merely because an agent exists. **DO NOT** keep substantive work entirely in the orchestrator merely because each individual step seems easy.
 
 **Dispatch efficiency:**
 - Reference paths/lines, don't paste files (\`src/app.ts:42\` not full contents)
@@ -134,10 +134,19 @@ const availableAgentsSection = (roster: readonly SubagentDefinition[]) => {
     'the following specialized agents are available to you for task delegation, using the `spawn` tool',
     "each agent lists out their metadata to inform you -> 'what is their specialty?', 'when should i delegate to them?', 'what are their limitations?', 'what tools/perms/skills do they have?'.",
     'always take into account agents metadata when delegating tasks to them.',
+    'agents do not always share the same skills/tools that you have, what they have is listed in their metadata',
     '',
     '<available_agents>',
     '',
-    ...roster.map(agent => [`@${agent.name}`, ...agent.metadata.map(line => `- ${line}`), ''].join('\n')),
+    ...roster.map(agent =>
+      [
+        `@${agent.name}`,
+        ...agent.metadata.map(line => `- ${line}`),
+        `- Tools: ${agent.tools.length > 0 ? agent.tools.join(', ') : 'none'}`,
+        `- Skills: ${agent.skills.length > 0 ? agent.skills.join(', ') : 'none'}`,
+        '',
+      ].join('\n'),
+    ),
     '</available_agents>',
   ];
   return content.join('\n');

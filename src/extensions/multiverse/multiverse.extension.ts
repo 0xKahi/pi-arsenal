@@ -121,7 +121,7 @@ function activateMultiverse(pi: ExtensionAPI, dependencies: MultiverseDependenci
       const registered = subAgents.getSubAgent(role.identity.agent);
       if (registered?.enabled) {
         runtime.registeredSubAgentSession = registered.agent;
-        emitSetAgentNameEvent(pi, { name: registered.agent.name, color: registered.agent.color });
+        emitSetAgentNameEvent(pi, { name: registered.agent.name, color: registered.agent.color, delay: 10 }); //delay as not to conflict with pi-qol own session_start event
       } else {
         childError = `Subagent "${role.identity.agent}" is ${registered ? 'disabled' : 'not registered'}.`;
       }
@@ -136,7 +136,7 @@ function activateMultiverse(pi: ExtensionAPI, dependencies: MultiverseDependenci
     if (active === 'megamind') PiToolManager.addActive(pi, [SPAWN_TOOL_NAME]);
     else PiToolManager.removeActive(pi, [SPAWN_TOOL_NAME]);
     if (!roster.length) initialCtx.ui.notify('pi-arsenal: No enabled valid Multiverse subagent is available; using Default.', 'warning');
-    emitSetAgentNameEvent(pi, { name: active, color: active === 'megamind' ? AGENT_COLORS.megamind : undefined });
+    emitSetAgentNameEvent(pi, { name: active, color: active === 'megamind' ? AGENT_COLORS.megamind : undefined, delay: 10 }); //delay as not to conflict with pi-qol own session_start event
   }
   //--- Internal Session Logic END ---
 

@@ -37,9 +37,9 @@ describe('buildSpawnRows', () => {
     const output = render(rows);
 
     expect(rows).toHaveLength(2);
-    expect(output).toContain('fixer (1)');
+    expect(output).toContain('fixer [1]');
     expect(output).toContain('new');
-    expect(output).toContain('(2)');
+    expect(output).toContain('[2]');
     expect(output).toContain('resume');
     expect(output).toContain('queued');
   });
@@ -99,9 +99,9 @@ describe('SpawnResultComponent', () => {
     };
     expect(update()).toBe([
       'spawn boundary-nonce (2)',
-      '├─ fixer (1) · new · 1.0s',
+      '├─ fixer [1] · new · 1.0s',
       '│  0 tools · ⠋ waiting',
-      '└─ explorer (2) · resume · 1.0s',
+      '└─ explorer [2] · resume · 1.0s',
       '   0 tools · ⠋ waiting',
     ].join('\n'));
     progress.observe(1, { type: 'tool_execution_start', toolCallId: 'read', toolName: 'read', args: { path: '~/file' } } as never);
@@ -136,7 +136,7 @@ describe('SpawnResultComponent', () => {
     const lines = renderLines(buildSpawnRows({ args, details: details(progress) }));
 
     expect(lines).toHaveLength(5);
-    expect(lines[0]).toContain('fixer (1)');
+    expect(lines[0]).toContain('fixer [1]');
     expect(lines[1]).toContain('↩ replied');
     expect(lines[3]).toContain('✗ failed');
     expect(lines[3]).not.toContain('model error');
@@ -169,7 +169,7 @@ describe('SpawnResultComponent', () => {
 
     expect(output).toContain('󰻞 prompt:\n│  implement the fix');
     expect(output).toContain(' tool logs:\n│  - ✓ bash git status');
-    expect(output).toContain('✓ fixer (1)\n  ---\n  childSessionId: child-1');
+    expect(output).toContain('✓ fixer [1]\n  ---\n  childSessionId: child-1');
     expect(output).toContain('checkpoints: none → leaf');
     expect(output).toContain('telemetry: anthropic/model');
     expect(output).toContain('truncated: cut from 9 lines / 99 bytes');

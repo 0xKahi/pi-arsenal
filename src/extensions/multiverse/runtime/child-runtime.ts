@@ -156,7 +156,7 @@ export class ChildRuntime {
       if (MULTIVERSE_DEBUG) {
         DebugLoggerUtil.logToMarkdown('subAgent', {
           header: 'System Prompt',
-          contents: [runtime.session.agent.state.systemPrompt],
+          contents: [runtime.session.agent?.state?.systemPrompt ?? '<system prompt unavailable>'],
         });
       }
 

@@ -55,7 +55,7 @@ const setup = (enabled: boolean, enabledRoster = true) => {
 };
 
 describe('parent persona eligibility', () => {
-  it('falls back without rewriting the recorded Megamind preference and restores it in a fresh enabled instance', () => {
+  it('falls back without rewriting the recorded Megamind preference and restores it in a fresh enabled instance', async () => {
     const disabled = setup(false);
     disabled.start();
     expect(disabled.activation.parentAgentState.getActive()).toBe('default');
@@ -65,6 +65,7 @@ describe('parent persona eligibility', () => {
     enabled.start();
     expect(enabled.activation.parentAgentState.getPreferred()).toBe('megamind');
     expect(enabled.activation.parentAgentState.getActive()).toBe('megamind');
+    await Bun.sleep(20);
     expect(enabled.agentNameEvents).toEqual(['MEGAMIND']);
   });
 
@@ -84,10 +85,11 @@ describe('parent persona eligibility', () => {
 
     const first = runtime.beforeAgentStart('HOST\nPROJECT APPEND');
     expect(first?.systemPrompt).toStartWith('HOST\nPROJECT APPEND');
-    expect(first?.systemPrompt).toContain('<Role>');
+    expect(first?.systemPrompt).toContain('# Orchestrator Role');
     expect(first?.systemPrompt).toContain('@explorer');
     expect(first?.systemPrompt).toContain('@fixer');
     expect(first?.systemPrompt).toContain('@visualizer');
+    expect(first?.systemPrompt).toContain('<available_agents>');
     expect(`${first?.systemPrompt}\nLATER EXTENSION`).toEndWith('LATER EXTENSION');
 
     const second = runtime.beforeAgentStart('HOST\nPROJECT APPEND');

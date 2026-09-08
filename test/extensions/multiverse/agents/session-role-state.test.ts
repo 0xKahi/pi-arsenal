@@ -59,16 +59,17 @@ const context = (entries: SessionEntry[], notifications: string[] = []): Extensi
   }) as unknown as ExtensionContext;
 
 describe('Multiverse session role classification', () => {
-  it('keeps an ordinary session in the parent role', () => {
+  it('keeps an ordinary session in the parent role', async () => {
     const { handler, roleState, agentNameEvents } = setup();
 
     handler({ type: 'session_start', reason: 'startup' }, context([]));
 
     expect(roleState.get()).toEqual({ kind: 'parent' });
+    await Bun.sleep(20);
     expect(agentNameEvents).toEqual([{ agentName: 'DEFAULT' }]);
   });
 
-  it('recognizes a marked child while Multiverse is enabled', () => {
+  it('recognizes a marked child while Multiverse is enabled', async () => {
     const { handler, roleState, agentNameEvents } = setup();
     const entries = [
       entry('arsenal-parent-agent', { version: 1, agent: 'megamind' }),
@@ -81,6 +82,7 @@ describe('Multiverse session role classification', () => {
       kind: 'child',
       identity: { version: 1, agent: 'visualizer', parentSessionId: 'parent' },
     });
+    await Bun.sleep(20);
     expect(agentNameEvents.map(event => event.agentName)).toEqual(['VISUALIZER']);
   });
 
