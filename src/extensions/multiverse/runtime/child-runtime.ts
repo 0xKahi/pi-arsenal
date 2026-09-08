@@ -9,7 +9,9 @@ import {
   type Skill,
 } from '@earendil-works/pi-coding-agent';
 import type { ModelConfig, ReasoningLevel } from '../../../schemas/shared-config.schema.ts';
+import { DebugLoggerUtil } from '../../../utils/debug-logger.util.ts';
 import type { SubagentDefinition } from '../agents/subagent-definition.ts';
+import { MULTIVERSE_DEBUG } from '../constants.ts';
 import type { ChildInteractionStatus, ChildTelemetry } from '../results/child-interaction.ts';
 
 type CreateSessionOptions = NonNullable<Parameters<typeof createAgentSession>[0]>;
@@ -150,6 +152,13 @@ export class ChildRuntime {
         events.push(event);
         input.onEvent?.(event);
       });
+
+      if (MULTIVERSE_DEBUG) {
+        DebugLoggerUtil.logToMarkdown('subAgent', {
+          header: 'System Prompt',
+          contents: [runtime.session.agent.state.systemPrompt],
+        });
+      }
 
       if (input.signal?.aborted) {
         status = 'aborted';

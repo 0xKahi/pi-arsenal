@@ -97,7 +97,7 @@ export class SpawnResultComponent implements Component {
         truncateToWidth(
           this.theme.fg('toolTitle', this.theme.bold('spawn')) +
             ' ' +
-            this.theme.fg('text', plain(this.boundaryNonce)) +
+            this.theme.fg('muted', plain(this.boundaryNonce)) +
             ' ' +
             this.theme.fg('syntaxNumber', `(${this.rows.length})`),
           safeWidth,
@@ -121,7 +121,7 @@ export class SpawnResultComponent implements Component {
 
   private renderRow(row: SpawnTaskRow, isLast: boolean, safeWidth: number): string[] {
     const connector = this.theme.fg('dim', treeConnector(isLast));
-    const number = this.theme.fg('syntaxNumber', `(${row.index + 1})`);
+    const number = this.theme.fg('syntaxOperator', `[${row.index + 1}]`);
     const origin = row.action === 'create' ? 'new' : 'resume';
     const separator = this.theme.fg('dim', ' · ');
     const header =
@@ -198,7 +198,7 @@ export class SpawnResultComponent implements Component {
       const symbol = row.phase === 'failed' ? STATUS_SYMBOLS.failure : row.phase === 'replied' ? STATUS_SYMBOLS.success : STATUS_SYMBOLS.pending;
       lines.push(
         truncateToWidth(
-          `${this.theme.fg(symbolColor, symbol)} ${this.theme.fg('text', plain(row.agent))} ${this.theme.fg('syntaxNumber', `(${row.index + 1})`)}`,
+          `${this.theme.fg(symbolColor, symbol)} ${this.theme.fg('text', plain(row.agent))} ${this.theme.fg('syntaxOperator', `[${row.index + 1}]`)}`,
           safeWidth,
           '',
         ),

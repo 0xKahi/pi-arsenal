@@ -54,3 +54,5 @@ export const MAX_OUTPUT_BYTES = 256 * 1024;
 export const AGENT_COLORS = {
   megamind: '#548be3',
 };
+
+export const MULTIVERSE_DEBUG = false;

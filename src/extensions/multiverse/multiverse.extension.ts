@@ -1,12 +1,13 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { ConfigProvider } from '../../config/config-loader.ts';
+import { DebugLoggerUtil } from '../../utils/debug-logger.util.ts';
 import { emitSetAgentNameEvent } from '../../utils/emit-set-agentName-event.util.ts';
 import { PiToolManager } from '../../utils/pi-tool-manager.util.ts';
 import { SessionRoleState } from './agents/session-role-state.ts';
 import type { SubagentDefinition } from './agents/subagent-definition.ts';
 import { discoverSubagentPaths, SUBAGENT_PROMPTS_DIRECTORY } from './agents/subagent-paths.ts';
 import { SubAgentRegistry } from './agents/subagent-registry.ts';
-import { AGENT_COLORS, COMMAND_NAME, PI_VIM_KEY_EVENT_ID } from './constants.ts';
+import { AGENT_COLORS, COMMAND_NAME, MULTIVERSE_DEBUG, PI_VIM_KEY_EVENT_ID } from './constants.ts';
 import { openMultiverseModal } from './modal/open-multiverse-modal.ts';
 import { buildMegamindPrompt } from './orchestrator/orchestrator-prompts/megamind.ts';
 import { type ParentAgent, ParentAgentState } from './orchestrator/parent-agent.ts';
@@ -98,7 +99,7 @@ function activateMultiverse(pi: ExtensionAPI, dependencies: MultiverseDependenci
   const { roleState, parentAgentState, subAgents, definitionErrors } = runtime;
   let latestCtx = initialCtx;
 
-  //--- Internal Session Start Logic ---
+  //--- Internal Session Logic START ---
   const config = dependencies.config.getMultiverse();
   subAgents.resolveAvailability(config);
   for (const error of definitionErrors) initialCtx.ui.notify(`pi-arsenal: ${error}`, 'error');
@@ -137,13 +138,27 @@ function activateMultiverse(pi: ExtensionAPI, dependencies: MultiverseDependenci
     if (!roster.length) initialCtx.ui.notify('pi-arsenal: No enabled valid Multiverse subagent is available; using Default.', 'warning');
     emitSetAgentNameEvent(pi, { name: active, color: active === 'megamind' ? AGENT_COLORS.megamind : undefined });
   }
-  //--- Internal Session Start Logic ---
+  //--- Internal Session Logic END ---
 
   pi.on('before_agent_start', event => {
-    if (runtime.registeredSubAgentSession) return { systemPrompt: runtime.registeredSubAgentSession.prompt };
+    if (runtime.registeredSubAgentSession) {
+      if (MULTIVERSE_DEBUG) {
+        DebugLoggerUtil.logToMarkdown(runtime.registeredSubAgentSession.name, {
+          header: 'System Prompt',
+          contents: [event.systemPrompt, '', 'Expected Subagent Prompt:', '', runtime.registeredSubAgentSession.prompt],
+        });
+      }
+
+      return { systemPrompt: runtime.registeredSubAgentSession.prompt };
+    }
+
     if (roleState.get().kind === 'parent' && parentAgentState.getActive() === 'megamind') {
       const config = dependencies.config.getMultiverse();
-      return { systemPrompt: `${event.systemPrompt}\n\n${buildMegamindPrompt(subAgents.availableSubAgents, config.maxConcurrency)}` };
+      const systemPrompt = `${event.systemPrompt}\n\n${buildMegamindPrompt(subAgents.availableSubAgents, config.maxConcurrency)}`;
+
+      if (MULTIVERSE_DEBUG) DebugLoggerUtil.logToMarkdown(parentAgentState.getActive(), { header: 'System Prompt', contents: [systemPrompt] });
+
+      return { systemPrompt };
     }
   });
 
