@@ -1,5 +1,11 @@
 # @0xkahi/pi-arsenal
 
+## 0.3.0
+
+### Minor Changes
+
+- 0570a0c: implemented multiverse subAgent ochestration extension
+
 ## 0.2.5
 
 ### Patch Changes
