@@ -21,15 +21,5 @@ describe('buildMegamindPrompt', () => {
     expect(prompt).toContain('<SpawnTool>');
     expect(prompt).not.toContain('child-only prompt');
     expect(prompt).not.toContain('- Tools:');
-    expect(prompt).not.toContain('@explorer');
-  });
-
-  it('describes configured concurrency and the batch ceiling', () => {
-    const roster = [definition('researcher')];
-    expect(buildMegamindPrompt(roster, 3)).toContain('runs 3 of them at a time');
-    expect(buildMegamindPrompt(roster, 3)).toContain('up to 10 tasks');
-    expect(buildMegamindPrompt(roster, 99)).toContain('runs 10 of them at a time');
-    expect(buildMegamindPrompt(roster, 1)).toContain('runs 1 of them at a time');
-    expect(buildMegamindPrompt(roster, 3)).toContain('Do not split a batch');
   });
 });

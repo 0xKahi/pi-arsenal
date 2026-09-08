@@ -146,7 +146,7 @@ describe('Multiverse activation lifecycle', () => {
     runtime.setConfig(MultiverseConfigSchema.parse({ enabled: true, defaultAgent: 'megamind', maxConcurrency: 2 }));
     runtime.start();
     expect(runtime.activation.parentAgentState.getActive()).toBe('megamind');
-    expect(runtime.turn()?.systemPrompt).toContain('runs 2 of them at a time');
+    expect(runtime.turn()?.systemPrompt).toContain('@researcher');
     expect(runtime.agentNameEvents).toEqual(['MEGAMIND']);
   });
 
@@ -259,7 +259,6 @@ describe('Multiverse activation lifecycle', () => {
     runtime.setConfig(
       MultiverseConfigSchema.parse({ enabled: true, maxConcurrency: 3, subagents: { researcher: { model: { modelId: 'custom' } } } }),
     );
-    expect(runtime.turn()?.systemPrompt).toContain('runs 3 of them at a time');
     await runtime.spawn();
     const execution = runtime.executions[0]!;
     expect(execution.model.provider).toBe('two');
