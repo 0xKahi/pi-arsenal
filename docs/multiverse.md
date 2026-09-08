@@ -39,6 +39,12 @@ Unknown skills are ignored in V1. Bundled definitions declare no skills and SDK 
 
 Availability is resolved at session start after arsenal config initialization. `before_agent_start` only applies the registered child prompt or builds/appends Megamind's prompt from the in-memory roster and current config; it does not reload files or mutate tools. Megamind roster entries contain names and authored metadata, not generated tool lists or child prompt bodies.
 
+## The `/multiverse` command
+
+When Multiverse is enabled, `/multiverse` and its Pi Vim key event open the same Vim-navigable modal. The **Switch Agent** tab selects Default or Megamind and starts on the currently active persona. A successful selection is persisted in an `arsenal-parent-agent` entry, updates the displayed agent name, and applies the matching prompt/tool policy to the next turn. In a child session both choices are visibly disabled. The **Child Sessions** tab is a coming-soon placeholder.
+
+The command and key-event handler are activated only after enabled configuration is resolved at `session_start`; disabled Multiverse does not expose them.
+
 ## The `spawn` tool
 
 `spawn` is registered once and is only callable from a parent session whose active persona is an eligible Megamind. Default parents, ineligible Megamind parents, and child sessions never receive it.
@@ -110,6 +116,6 @@ Multiverse reports no account of which files a child changed. All bundled subage
 - No second `tool_call` guard: an enabled council may still connect even if its tools are inactive.
 - No file-touch reporting at all: use the child's session file or the working tree.
 - Parent crashes may leave an interaction without a reference; it is preserved but not imported.
-- Explicit parent switching is deferred to the future Pi command. This cleanup retains configured defaults and saved preference restoration, but exposes no `selectParentAgent` callback or pending-persona mechanism.
+- The Child Sessions modal tab is a placeholder; browsing or attaching to child sessions remains future work.
 
 The approved Megamind content and builder live together in `src/extensions/multiverse/orchestrator/orchestrator-prompts/megamind.ts`. Megamind eligibility depends on enabled Multiverse and an available registered roster, not an introduction placeholder. Spawn execution reads the current model, thinking level, config, and active parent branch while reusing registry lookups.

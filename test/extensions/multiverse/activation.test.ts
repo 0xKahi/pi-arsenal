@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { ExtensionAPI, ExtensionContext, SessionEntry } from '@earendil-works/pi-coding-agent';
 import type { ConfigProvider } from '../../../src/config/config-loader.ts';
+import { PI_VIM_KEY_EVENT_ID } from '../../../src/extensions/multiverse/constants.ts';
 import { registerMultiverse } from '../../../src/extensions/multiverse/multiverse.extension.ts';
 import type { SpawnOrchestratorDependencies } from '../../../src/extensions/multiverse/orchestrator/spawn-orchestrator.ts';
 import { SpawnProgress } from '../../../src/extensions/multiverse/tools/spawn/spawn-progress.ts';
@@ -55,9 +56,16 @@ describe('Multiverse activation lifecycle', () => {
     const agentNameEvents: string[] = [];
     const executions: SpawnOrchestratorDependencies[] = [];
     const handlers = new Map<string, (event: never, ctx: ExtensionContext) => unknown>();
+    const vimHandlers = new Map<string, () => void>();
+    let command: { handler: (args: string, ctx: ExtensionContext) => Promise<void> } | undefined;
+    let modalResult: unknown = { action: 'close' };
+    let modalOpenCount = 0;
     let tool: { execute: (id: string, input: never, signal: undefined, update: undefined, ctx: ExtensionContext) => Promise<unknown> };
     const pi = {
       on: (name: string, handler: (event: never, ctx: ExtensionContext) => unknown) => handlers.set(name, handler),
+      registerCommand: (_name: string, value: typeof command) => {
+        command = value;
+      },
       registerTool: (value: typeof tool) => {
         tool = value;
       },
@@ -70,16 +78,27 @@ describe('Multiverse activation lifecycle', () => {
         active = names;
         selections.push(names);
       },
-      appendEntry: () => {},
-      events: { emit: (_name: string, payload: { agentName: string }) => agentNameEvents.push(payload.agentName) },
+      appendEntry: (customType: string, data: unknown) =>
+        entries.push({ type: 'custom', id: `entry-${entries.length}`, parentId: null, timestamp: '', customType, data } as SessionEntry),
+      events: {
+        emit: (_name: string, payload: { agentName: string }) => agentNameEvents.push(payload.agentName),
+        on: (name: string, handler: () => void) => vimHandlers.set(name, handler),
+      },
     } as unknown as ExtensionAPI;
     const ctx = {
+      mode: 'tui',
       cwd: '/tmp/project',
       model: { provider: 'one', id: 'model' },
       thinkingLevel: 'low',
       modelRegistry: {},
       sessionManager: { getEntries: () => entries, getBranch: () => branch, getSessionId: () => 'parent' },
-      ui: { notify: (message: string) => notifications.push(message) },
+      ui: {
+        notify: (message: string) => notifications.push(message),
+        custom: () => {
+          modalOpenCount++;
+          return Promise.resolve(modalResult);
+        },
+      },
     } as unknown as ExtensionContext;
     const activation = registerMultiverse(pi, {
       config: { getMultiverse: () => config } as ConfigProvider,
@@ -101,9 +120,17 @@ describe('Multiverse activation lifecycle', () => {
       notifications,
       agentNameEvents,
       executions,
+      entries,
       start,
       turn,
       spawn,
+      command: () => command,
+      hasHandler: (name: string) => handlers.has(name),
+      vimHandlers,
+      modalOpenCount: () => modalOpenCount,
+      setModalResult: (result: unknown) => {
+        modalResult = result;
+      },
       active: () => active,
       setConfig: (next: typeof config) => {
         config = next;
@@ -141,13 +168,18 @@ describe('Multiverse activation lifecycle', () => {
     expect(runtime.notifications).toHaveLength(1);
   });
 
-  it('resets available names only at session start without rereading definitions', () => {
-    const runtime = setup();
-    runtime.start();
-    runtime.setConfig(MultiverseConfigSchema.parse({ enabled: true, defaultAgent: 'megamind', subagents: { researcher: { enabled: false } } }));
-    runtime.start();
-    expect(runtime.activation.parentAgentState.getActive()).toBe('default');
-    expect(runtime.active()).not.toContain('spawn');
+  it('resolves available names independently in each fresh instance', () => {
+    const available = setup();
+    available.start();
+    expect(available.activation.parentAgentState.getActive()).toBe('megamind');
+
+    const unavailable = setup();
+    unavailable.setConfig(
+      MultiverseConfigSchema.parse({ enabled: true, defaultAgent: 'megamind', subagents: { researcher: { enabled: false } } }),
+    );
+    unavailable.start();
+    expect(unavailable.activation.parentAgentState.getActive()).toBe('default');
+    expect(unavailable.active()).not.toContain('spawn');
   });
 
   it('uses the registered child prompt and tool subset without per-turn mutation', () => {
@@ -181,13 +213,16 @@ describe('Multiverse activation lifecycle', () => {
     expect(runtime.executions).toEqual([]);
   });
 
-  it('restores child behavior on an enabled activation', () => {
-    const runtime = setup([identity()], false);
-    runtime.start();
-    runtime.setConfig(MultiverseConfigSchema.parse({ enabled: true }));
-    runtime.start();
-    expect(runtime.active()).toEqual(['read']);
-    expect(runtime.turn()?.systemPrompt).toBe('original child prompt');
+  it('restores child behavior in a fresh enabled instance', () => {
+    const marker = identity();
+    const disabled = setup([marker], false);
+    disabled.start();
+    expect(disabled.turn()).toBeUndefined();
+
+    const enabled = setup([marker], true);
+    enabled.start();
+    expect(enabled.active()).toEqual(['read']);
+    expect(enabled.turn()?.systemPrompt).toBe('original child prompt');
   });
 
   it.each([identity('unregistered'), identity('researcher', 2)])('reports invalid/unavailable children during activation', marker => {
@@ -237,11 +272,57 @@ describe('Multiverse activation lifecycle', () => {
     expect(runtime.executions[1]?.resolveContinuation('child-1')?.agent).toBe('researcher');
   });
 
-  it('uses the provider directly for disabled guards after activation', async () => {
+  it('registers command and Vim event only after enabled session activation', () => {
+    const disabled = setup([], false);
+    disabled.start();
+    expect(disabled.command()).toBeUndefined();
+    expect(disabled.hasHandler('before_agent_start')).toBe(false);
+    expect(disabled.vimHandlers.has(PI_VIM_KEY_EVENT_ID)).toBe(false);
+
+    const enabled = setup([], true, 'default');
+    expect(enabled.command()).toBeUndefined();
+    expect(enabled.hasHandler('before_agent_start')).toBe(false);
+    enabled.start();
+    expect(enabled.command()).toBeDefined();
+    expect(enabled.hasHandler('before_agent_start')).toBe(true);
+    expect(enabled.vimHandlers.has(PI_VIM_KEY_EVENT_ID)).toBe(true);
+  });
+
+  it('opens the same modal from the command and Vim key event', async () => {
+    const runtime = setup([], true, 'default');
+    runtime.start();
+    await runtime.command()?.handler('', runtime.ctx);
+    runtime.vimHandlers.get(PI_VIM_KEY_EVENT_ID)?.();
+    await Bun.sleep(0);
+    expect(runtime.modalOpenCount()).toBe(2);
+  });
+
+  it('applies a modal persona selection immediately for the next turn and persists it', async () => {
+    const runtime = setup([], true, 'default');
+    runtime.start();
+    runtime.setModalResult({ action: 'select', agent: 'megamind' });
+    await runtime.command()?.handler('', runtime.ctx);
+
+    expect(runtime.activation.parentAgentState.getActive()).toBe('megamind');
+    expect(runtime.active()).toContain('spawn');
+    expect(runtime.turn()?.systemPrompt).toContain('@researcher');
+    expect(runtime.entries.at(-1)).toMatchObject({
+      customType: 'arsenal-parent-agent',
+      data: { version: 1, agent: 'megamind' },
+    });
+    expect(runtime.agentNameEvents.at(-1)).toBe('MEGAMIND');
+
+    runtime.setModalResult({ action: 'select', agent: 'default' });
+    await runtime.command()?.handler('', runtime.ctx);
+    expect(runtime.activation.parentAgentState.getActive()).toBe('default');
+    expect(runtime.active()).not.toContain('spawn');
+    expect(runtime.turn()).toBeUndefined();
+  });
+
+  it('uses the provider directly for the spawn execution guard', async () => {
     const runtime = setup();
     runtime.start();
     runtime.setConfig(MultiverseConfigSchema.parse({ enabled: false }));
-    expect(runtime.turn()).toBeUndefined();
     await expect(runtime.spawn()).rejects.toThrow('eligible Megamind parent');
   });
 });

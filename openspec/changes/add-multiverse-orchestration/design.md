@@ -158,11 +158,11 @@ When continuing a child, Multiverse walks active-branch tool results for the lat
 
 ### D12. Parent persona persistence is append-only and file-global
 
-**Decision.** The future switching command will append an `arsenal-parent-agent` custom entry naming `default` or `megamind` for each explicit switch; switching implementation is deferred by the user. This cleanup retains restoration. On restore, the last physically recorded syntactically valid selection in `getEntries()` is the preference, regardless of the active parent branch; absent an entry, configured `defaultAgent` applies. When enabled Multiverse has no available subagent, the runtime falls back to Default with a notice while retaining the recorded preference. Disabled Multiverse sets active Default and returns without restoring or rewriting preferences, reporting roster diagnostics, or enforcing child roles.
+**Decision.** The `/multiverse` command and matching `PI_VIM_KEY_EVENT` open a Vim-navigable modal with `[Switch Agent]` and `[Child Sessions]` tabs. The child-sessions tab is a coming-soon placeholder. The switch tab lists Default and Megamind, initially selecting the active persona. Confirming an enabled option appends an `arsenal-parent-agent` custom entry naming `default` or `megamind`, updates active state, toggles `spawn`, and emits the agent-name event immediately; the next turn therefore uses the selected prompt/tool policy without pending-persona state. On restore, the last physically recorded syntactically valid selection in `getEntries()` is the preference, regardless of the active parent branch; absent an entry, configured `defaultAgent` applies. When enabled Multiverse has no available subagent, the runtime falls back to Default with a notice while retaining the recorded preference. Disabled Multiverse leaves the newly constructed parent state at Default, removes `spawn`, and does not install the enabled activation's command or key event.
 
 **Why.** Parent persona is treated as session-level UI/orchestration state rather than branch-local conversation content. Append-only entries preserve history and survive reopen without a separate settings file.
 
-**Child guard.** While Multiverse is enabled, `arsenal-subagent` identity has higher priority. A child ignores parent-agent entries, rejects switching, uses its full replacement prompt, and never activates the batch tool.
+**Child guard.** While Multiverse is enabled, `arsenal-subagent` identity has higher priority. In a child, both parent-persona rows are visibly disabled and cannot be confirmed. The child ignores parent-agent entries, uses its full replacement prompt, and never activates the batch tool.
 
 ### D13. Computed frame around verbatim child output
 
@@ -231,19 +231,26 @@ The content restriction is a correction made after D16 landed. Copying the full 
 ```text
 Extension load
   --> establish bundled paths and register definitions once
-  --> register spawn and handlers
+  --> register spawn
+  --> register one configuration gate on session_start
 
-session_start (after index.ts initializes configuration)
+session_start gate (after index.ts initializes configuration)
+  --> disabled: keep the fresh Default state, remove spawn, return
+  --> enabled: install activateMultiverse once
+
+activateMultiverse
+  --> initialize the enabled session directly
+  --> install before_agent_start, command, and key event
+
+activated session initialization
   --> clear transient activation data
-  --> disabled: Default active state, remove spawn, return
-  --> enabled: resolve registry availability and report diagnostics
+  --> resolve registry availability and report diagnostics
   --> classify identity
   --> invalid child: diagnostic and fail closed
   --> child: retain registered definition and override tools
   --> parent: restore preference, resolve eligibility from roster, toggle spawn
 
-before_agent_start
-  --> disabled: return
+before_agent_start (installed only by enabled activation)
   --> child: replace with registeredSubAgentSession.prompt
   --> Megamind parent: build contribution from registry and append to event.systemPrompt
   --> Default parent: return
@@ -254,7 +261,7 @@ spawn.execute
   --> validate and dispatch
 ```
 
-Configuration-dependent activation occurs at session start, not factory time: `index.ts` initializes config in its earlier handler. Definition edits become visible on reload/reopen, not arbitrary subsequent lookups. Explicit persona switching, `selectParentAgent`, pending-persona state, and settled-event handling are deferred until the Pi switching command is implemented. Existing saved preference restoration remains. `before_agent_start` only builds/applies prompt policy, with no tool mutations, file parsing, availability resolution, or repeated notifications. Invalid/unavailable child activation reports its error and selects no tools; no persistent error variable or new input interception is added in this cleanup.
+Configuration-dependent activation occurs at session start, not factory time: `index.ts` initializes config in its earlier handler. `registerMultiverse` contains only the enabled gate: disabled instances remove `spawn` and retain their fresh Default state, while enabled instances install `activateMultiverse`. Pi reloads and rebinds fresh extension instances for reload, new, resume, and fork session transitions, so enabled-only handlers do not survive into a disabled instance. `activateMultiverse` initializes that instance's enabled session directly and owns its prompt, command, and key-event behavior; it does not register a second `session_start` handler. The enabled-only `before_agent_start`, command, and key event therefore need no redundant configuration checks and are absent while disabled. Definition edits become visible on reload/reopen, not arbitrary subsequent lookups. Persona selection applies directly while the modal is open; no pending-persona or settled-event state is required because prompt policy is read at the next `before_agent_start` and Pi snapshots tool context per run. Existing saved preference restoration remains. `before_agent_start` only builds/applies prompt policy, with no tool mutations, file parsing, availability resolution, or repeated notifications. Invalid/unavailable child activation reports its error and selects no tools; no persistent error variable or new input interception is added in this cleanup.
 
 `src/utils/pi-tool-manager.util.ts` provides the static `PiToolManager.removeActive`, `addActive`, and `overrideActive` mechanics. Remove/add preserve unrelated active tools and avoid redundant sets; add deduplicates. Override uses registered names intersected with the supplied allowlist. The utility has no knowledge of roles, config, registry, or prompts. Session-start call sites express policy directly: remove spawn for Default/disabled, add spawn for Megamind, override for children. Existing `applyParentTools`/`applyChildTools` responsibilities are replaced by these explicit policies rather than relocated wholesale into the utility.
 

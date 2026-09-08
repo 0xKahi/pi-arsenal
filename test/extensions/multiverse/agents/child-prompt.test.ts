@@ -35,10 +35,11 @@ describe('child prompt policy', () => {
         handlers.set(eventName, eventHandlers);
       },
       registerTool: () => {},
+      registerCommand: () => {},
       getActiveTools: () => [],
       getAllTools: () => ['read', 'grep', 'find', 'ls', 'bash', 'edit', 'write', 'spawn'].map(name => ({ name })),
       setActiveTools: (names: string[]) => activeToolSelections.push(names),
-      events: { emit: () => {} },
+      events: { emit: () => {}, on: () => {} },
     } as unknown as ExtensionAPI;
     const notifications: string[] = [];
     const ctx = {
@@ -46,12 +47,15 @@ describe('child prompt policy', () => {
       ui: { notify: (message: string) => notifications.push(message) },
     } as unknown as ExtensionContext;
     registerMultiverse(pi, { config });
-    return { handlers, ctx, notifications, activeToolSelections };
+    const start = (reason: 'startup' | 'reload') => {
+      for (const handler of [...(handlers.get('session_start') ?? [])]) handler({ type: 'session_start', reason }, ctx);
+    };
+    return { handlers, ctx, notifications, activeToolSelections, start };
   };
 
   it('fully replaces host, appended, command-line, and parent persona prompt content', () => {
-    const { handlers, ctx, notifications, activeToolSelections } = setup([childEntry()]);
-    handlers.get('session_start')?.[0]?.({ type: 'session_start', reason: 'startup' }, ctx);
+    const { handlers, ctx, notifications, activeToolSelections, start } = setup([childEntry()]);
+    start('startup');
 
     const result = handlers.get('before_agent_start')?.[0]?.({ systemPrompt: 'HOST\nPROJECT APPEND\nCLI APPEND\nMEGAMIND' }, ctx) as
       | { systemPrompt?: string }
@@ -67,17 +71,13 @@ describe('child prompt policy', () => {
     expect(result?.systemPrompt).not.toContain('MEGAMIND');
     expect(`${result?.systemPrompt}\nLATER EXTENSION`).toEndWith('LATER EXTENSION');
 
-    handlers.get('session_start')?.[0]?.({ type: 'session_start', reason: 'reload' }, ctx);
     handlers.get('before_agent_start')?.[0]?.({ systemPrompt: 'HOST AGAIN' }, ctx);
-    expect(activeToolSelections).toEqual([
-      ['read', 'grep', 'find', 'ls', 'bash'],
-      ['read', 'grep', 'find', 'ls', 'bash'],
-    ]);
+    expect(activeToolSelections).toEqual([['read', 'grep', 'find', 'ls', 'bash']]);
   });
 
   it('does not replace the prompt for an ordinary parent session', () => {
-    const { handlers, ctx, activeToolSelections } = setup([]);
-    handlers.get('session_start')?.[0]?.({ type: 'session_start', reason: 'startup' }, ctx);
+    const { handlers, ctx, activeToolSelections, start } = setup([]);
+    start('startup');
 
     const result = handlers.get('before_agent_start')?.[0]?.({ systemPrompt: 'HOST' }, ctx);
 

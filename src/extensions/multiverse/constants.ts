@@ -1,8 +1,12 @@
 import { homedir } from 'node:os';
 import path from 'node:path';
+import { piVimKeyEventId } from '../../constants';
 
 /** Public tool name exposed to the model. */
 export const SPAWN_TOOL_NAME = 'spawn';
+
+export const COMMAND_NAME = 'multiverse';
+export const PI_VIM_KEY_EVENT_ID = piVimKeyEventId(COMMAND_NAME);
 
 /** Durable custom session entry types written by Multiverse. */
 export const SUBAGENT_IDENTITY_CUSTOM_TYPE = 'arsenal-subagent';

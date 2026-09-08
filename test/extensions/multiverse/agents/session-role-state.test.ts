@@ -35,12 +35,14 @@ const setup = () => {
       if (eventName === 'session_start') handlers.push(handler);
     },
     registerTool: () => {},
+    registerCommand: () => {},
     getActiveTools: () => [],
     getAllTools: () => ['read', 'grep', 'find', 'ls', 'bash', 'edit', 'write'].map(name => ({ name })),
     getCommands: () => [],
     setActiveTools: () => {},
     events: {
       emit: (_name: string, payload: { agentName: string; color?: string }) => agentNameEvents.push(payload),
+      on: () => {},
     },
   } as unknown as ExtensionAPI;
   const roleState = new SessionRoleState();

@@ -27,13 +27,14 @@ const setup = (initialEntries: SessionEntry[] = [], persona: 'default' | 'megami
       handlers.set(eventName, [...(handlers.get(eventName) ?? []), handler]);
     },
     registerTool: (tool: ToolDefinition<never, never>) => tools.push(tool),
+    registerCommand: () => {},
     registerCustomEntryRenderer: (customType: string) => renderers.push(customType),
     appendEntry: (customType: string, data: unknown) => entries.push(customEntry(customType, data)),
     setActiveTools: (names: string[]) => (activeTools = names),
     getActiveTools: () => activeTools,
     getAllTools: () => ['read', 'grep', 'find', 'ls', 'bash', 'edit', 'write', 'spawn'].map(name => ({ name })),
     getCommands: () => [],
-    events: { emit: () => {} },
+    events: { emit: () => {}, on: () => {} },
   } as unknown as ExtensionAPI;
 
   const config: ConfigProvider = {
