@@ -1,10 +1,12 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { ConfigProvider } from '../../config/config-loader.ts';
+import type { ModelConfig, ReasoningLevel } from '../../schemas/shared-config.schema.ts';
 import { DebugLoggerUtil } from '../../utils/debug-logger.util.ts';
 import { emitSetAgentNameEvent } from '../../utils/emit-set-agentName-event.util.ts';
 import { PiToolManager } from '../../utils/pi-tool-manager.util.ts';
 import { SessionRoleState } from './agents/session-role-state.ts';
 import type { SubagentDefinition } from './agents/subagent-definition.ts';
+import { type PresetSelection, SubAgentModelResolver } from './agents/subagent-model-resolver.ts';
 import { discoverSubagentPaths, SUBAGENT_PROMPTS_DIRECTORY } from './agents/subagent-paths.ts';
 import { SubAgentRegistry } from './agents/subagent-registry.ts';
 import { AGENT_COLORS, COMMAND_NAME, MULTIVERSE_DEBUG, PI_VIM_KEY_EVENT_ID } from './constants.ts';
@@ -36,6 +38,7 @@ interface MultiverseRuntime {
   parentAgentState: ParentAgentState;
   subAgents: SubAgentRegistry;
   definitionErrors: readonly string[];
+  modelResolver: SubAgentModelResolver;
   registeredSubAgentSession?: SubagentDefinition;
 }
 
@@ -47,18 +50,27 @@ export function registerMultiverse(pi: ExtensionAPI, dependencies: MultiverseDep
   const subAgents = new SubAgentRegistry();
   const discovered = discoverSubagentPaths(dependencies.definitionsDirectory ?? SUBAGENT_PROMPTS_DIRECTORY);
   const definitionErrors = [...discovered.errors, ...subAgents.register(discovered.paths)];
-  const runtime: MultiverseRuntime = { roleState, parentAgentState, subAgents, definitionErrors };
+  // Selection is deliberately extension-local: session starts reset it and switches never append entries.
+  const modelResolver = new SubAgentModelResolver(dependencies.config.getMultiverse());
+  const runtime: MultiverseRuntime = { roleState, parentAgentState, subAgents, definitionErrors, modelResolver };
 
   pi.registerTool(
     createSpawnTool({
       // Reuse the registry, but read the current model, configuration, and parent branch for each call.
       getExecutionContext: ctx => {
         const settings = dependencies.config.getMultiverse();
+        modelResolver.updateConfig(settings);
         if (!settings.enabled || roleState.get().kind !== 'parent' || parentAgentState.getActive() !== 'megamind') {
           return undefined;
         }
         if (!ctx.model) return { error: 'spawn requires a selected model.' };
-        const agentModel = (name: string) => (Object.hasOwn(settings.subagents, name) ? settings.subagents[name]?.model : undefined);
+        // Snapshot composed settings now, before this spawn call can queue any work. Later
+        // preset changes must not alter queued continuations in this batch.
+        const selection = modelResolver.currentSelection();
+        const models = new Map<string, Partial<ModelConfig>>(
+          subAgents.availableSubAgents.map(agent => [agent.name, modelResolver.resolveModel(agent.name, selection)]),
+        );
+        const agentModel = (name: string) => models.get(name);
         return {
           cwd: ctx.cwd,
           parentSessionId: ctx.sessionManager.getSessionId(),
@@ -82,7 +94,9 @@ export function registerMultiverse(pi: ExtensionAPI, dependencies: MultiverseDep
 
   let activated = false;
   pi.on('session_start', (_event, ctx) => {
-    if (!dependencies.config.getMultiverse().enabled) {
+    const settings = dependencies.config.getMultiverse();
+    modelResolver.reset(settings);
+    if (!settings.enabled) {
       PiToolManager.removeActive(pi, [SPAWN_TOOL_NAME]);
       return;
     }
@@ -175,16 +189,49 @@ function activateMultiverse(pi: ExtensionAPI, dependencies: MultiverseDependenci
       ctx.ui.notify(`/${COMMAND_NAME} requires TUI mode.`, 'warning');
       return;
     }
+    const settings = dependencies.config.getMultiverse();
+    runtime.modelResolver.updateConfig(settings);
+
+    const buildPresetTabState = (
+      resolver: SubAgentModelResolver,
+      config: ReturnType<ConfigProvider['getMultiverse']>,
+      agentNames: readonly string[],
+      ctx: ExtensionContext,
+    ) => {
+      const selections: PresetSelection[] = [{ kind: 'baseline' }];
+      for (const name of Object.keys(config.presets ?? {})) selections.push({ kind: 'named', name });
+      return {
+        selection: resolver.currentSelection(),
+        options: selections.map(selection => ({
+          selection,
+          agents: agentNames.map(name => ({ name, model: resolver.resolveModel(name, selection) })),
+        })),
+        parentModel: ctx.model ? { provider: ctx.model.provider, id: ctx.model.id } : undefined,
+        parentReasoning: ctx.thinkingLevel as ReasoningLevel | undefined,
+      };
+    };
+
     const result = await openMultiverseModal(ctx, {
       activeAgent: parentAgentState.getActive(),
       role: roleState.get(),
       megamindAvailable: subAgents.availableSubAgents.length > 0,
+      presets: buildPresetTabState(
+        runtime.modelResolver,
+        settings,
+        subAgents.availableSubAgents.map(agent => agent.name),
+        ctx,
+      ),
     });
+
     if (result.action === 'select') selectParentAgent(result.agent);
+    // Keep preset selection parent-only even if a stale or synthetic modal result is returned.
+    if (result.action === 'select-preset' && roleState.get().kind === 'parent') {
+      runtime.modelResolver.select(result.selection);
+    }
   };
 
   pi.registerCommand(COMMAND_NAME, {
-    description: 'Switch Multiverse personas or browse child sessions',
+    description: 'Switch Multiverse personas, browse child sessions, or select model presets',
     handler: async (args, ctx) => {
       latestCtx = ctx;
       if (args.trim()) {

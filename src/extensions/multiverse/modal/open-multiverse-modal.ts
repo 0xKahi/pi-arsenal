@@ -2,23 +2,29 @@ import type { ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
 import type { ModalComponentFactory, ModalTab } from '../../../libs/modal';
 import { fitLine, ListTab, ModalDialog, presentModal, VimNavigationScheme } from '../../../libs/modal';
 import type { SessionRole } from '../agents/session-role-state.ts';
+import type { PresetSelection } from '../agents/subagent-model-resolver.ts';
 import type { ParentAgent } from '../orchestrator/parent-agent.ts';
+import { type MultiverseAgentPresetTabState, PresetsTab } from './multiverse-agent-preset-tab.ts';
 
 const PARENT_AGENTS: readonly ParentAgent[] = ['default', 'megamind'];
 
-export type MultiverseModalResult = { action: 'close' } | { action: 'select'; agent: ParentAgent };
+export type MultiverseModalResult =
+  | { action: 'close' }
+  | { action: 'select'; agent: ParentAgent }
+  | { action: 'select-preset'; selection: PresetSelection };
 
 export interface MultiverseModalState {
   activeAgent: ParentAgent;
   role: SessionRole;
   megamindAvailable: boolean;
+  presets?: MultiverseAgentPresetTabState;
 }
 
 export function buildMultiverseModalFactory(state: MultiverseModalState): ModalComponentFactory<MultiverseModalResult> {
   return (tui, theme, keybindings, done, frame) => {
     const disabled = (agent: ParentAgent) => state.role.kind !== 'parent' || (agent === 'megamind' && !state.megamindAvailable);
     const switchTab = new ListTab<ParentAgent>(theme, {
-      label: 'Switch Agent',
+      label: 'Switch Agents',
       items: PARENT_AGENTS,
       initialIndex: Math.max(0, PARENT_AGENTS.indexOf(state.activeAgent)),
       renderRow: (agent, selected) => renderAgentRow(agent, selected, state.activeAgent, disabled(agent), theme),
@@ -36,11 +42,20 @@ export function buildMultiverseModalFactory(state: MultiverseModalState): ModalC
       hints: () => [],
     };
 
+    const tabs: ModalTab[] =
+      state.presets === undefined
+        ? [switchTab, childSessionsTab]
+        : [
+            switchTab,
+            new PresetsTab(theme, state.presets, state.role.kind !== 'parent', selection => done({ action: 'select-preset', selection })),
+            childSessionsTab,
+          ];
+
     return new ModalDialog(tui, theme, keybindings, {
-      tabs: [switchTab, childSessionsTab],
+      tabs,
       navigation: new VimNavigationScheme(),
       frame,
-      height: 'auto',
+      height: state.presets === undefined ? 'auto' : 'fit',
       title: 'Multiverse',
       cancelValue: { action: 'close' },
       onComplete: done,

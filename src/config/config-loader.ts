@@ -134,6 +134,7 @@ export class ConfigLoader implements ConfigProvider {
       multiverse: {
         ...base.multiverse,
         ...override.multiverse,
+        presets: ConfigLoader.mergePresets(base.multiverse.presets, override.multiverse?.presets),
         subagents: Object.fromEntries(
           [...new Set([...Object.keys(base.multiverse.subagents), ...Object.keys(override.multiverse?.subagents ?? {})])].map(name => {
             const current = Object.hasOwn(base.multiverse.subagents, name) ? base.multiverse.subagents[name] : undefined;
@@ -152,6 +153,32 @@ export class ConfigLoader implements ConfigProvider {
         ),
       },
     };
+  }
+
+  private static mergePresets<T extends Record<string, Record<string, Record<string, unknown>>>>(
+    base: T | undefined,
+    override: Partial<T> | undefined,
+  ): T | undefined {
+    if (!base && !override) return undefined;
+
+    const presetNames = new Set([...Object.keys(base ?? {}), ...Object.keys(override ?? {})]);
+    return Object.fromEntries(
+      [...presetNames].map(presetName => {
+        const current = base && Object.hasOwn(base, presetName) ? base[presetName] : undefined;
+        const patch = override && Object.hasOwn(override, presetName) ? override[presetName] : undefined;
+        const agentNames = new Set([...Object.keys(current ?? {}), ...Object.keys(patch ?? {})]);
+        return [
+          presetName,
+          Object.fromEntries(
+            [...agentNames].map(agentName => {
+              const currentModel = current && Object.hasOwn(current, agentName) ? current[agentName] : undefined;
+              const patchModel = patch && Object.hasOwn(patch, agentName) ? patch[agentName] : undefined;
+              return [agentName, ConfigLoader.mergeOptionalModel(currentModel, patchModel) ?? {}];
+            }),
+          ),
+        ];
+      }),
+    ) as T;
   }
 
   private static mergeOptionalModel<T extends Record<string, unknown>>(base: T | undefined, override: Partial<T> | undefined): T | undefined {

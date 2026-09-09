@@ -319,6 +319,51 @@ describe('Multiverse activation lifecycle', () => {
     expect(runtime.turn()).toBeUndefined();
   });
 
+  it('selects presets independently of persona, snapshots them per spawn call, and resets on session start', async () => {
+    const runtime = setup([], true, 'megamind');
+    const settings = MultiverseConfigSchema.parse({
+      enabled: true,
+      defaultAgent: 'megamind',
+      subagents: { researcher: { model: { provider: 'base', modelId: 'base-model', reasoning: 'low' } } },
+    });
+    Object.assign(settings, {
+      defaultPreset: 'smart',
+      presets: { smart: { researcher: { modelId: 'smart-model', reasoning: 'high' } } },
+    });
+    runtime.setConfig(settings);
+    runtime.start();
+
+    await runtime.spawn();
+    expect(runtime.executions[0]?.subagentModel('researcher')).toEqual({ provider: 'base', modelId: 'smart-model', reasoning: 'high' });
+
+    const entriesBefore = runtime.entries.length;
+    runtime.setModalResult({ action: 'select-preset', selection: { kind: 'baseline' } });
+    await runtime.command()?.handler('', runtime.ctx);
+    expect(runtime.activation.parentAgentState.getActive()).toBe('megamind');
+    expect(runtime.entries).toHaveLength(entriesBefore);
+    await runtime.spawn();
+    expect(runtime.executions[1]?.subagentModel('researcher')).toEqual({ provider: 'base', modelId: 'base-model', reasoning: 'low' });
+    // The first call retains its composed settings after the selection changes.
+    expect(runtime.executions[0]?.subagentModel('researcher')?.modelId).toBe('smart-model');
+
+    runtime.start();
+    await runtime.spawn();
+    expect(runtime.executions[2]?.subagentModel('researcher')?.modelId).toBe('smart-model');
+
+    // A selection whose configured entry disappears resolves to baseline, not defaultPreset.
+    Object.assign(settings, {
+      presets: {
+        smart: { researcher: { modelId: 'smart-model', reasoning: 'high' } },
+        fast: { researcher: { modelId: 'fast-model' } },
+      },
+    });
+    runtime.setModalResult({ action: 'select-preset', selection: { kind: 'named', name: 'fast' } });
+    await runtime.command()?.handler('', runtime.ctx);
+    Object.assign(settings, { presets: { smart: { researcher: { modelId: 'smart-model', reasoning: 'high' } } } });
+    await runtime.spawn();
+    expect(runtime.executions[3]?.subagentModel('researcher')).toEqual({ provider: 'base', modelId: 'base-model', reasoning: 'low' });
+  });
+
   it('uses the provider directly for the spawn execution guard', async () => {
     const runtime = setup();
     runtime.start();

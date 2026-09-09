@@ -253,6 +253,108 @@ describe('ConfigLoader', () => {
     expect(result.warnings.join('\n')).toContain('extreme');
   });
 
+  it('deep-merges trusted project preset model fields and retains sibling presets and agents', () => {
+    writeFileSync(
+      globalPath,
+      JSON.stringify({
+        multiverse: {
+          defaultPreset: 'global',
+          presets: {
+            global: {
+              fixer: { provider: 'openai', modelId: 'one', reasoning: 'low' },
+              explorer: { modelId: 'explore' },
+            },
+            retained: { visualizer: { provider: 'anthropic' } },
+          },
+        },
+      }),
+    );
+    writeFileSync(
+      projectPath,
+      JSON.stringify({
+        multiverse: {
+          defaultPreset: 'global',
+          presets: {
+            global: { fixer: { reasoning: 'high' }, reviewer: {} },
+            retained: {},
+            project: {},
+          },
+        },
+      }),
+    );
+
+    const result = ConfigLoader.load(createCtx(true, tmpDir), createResolver(globalPath, projectPath));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.config.multiverse.defaultPreset).toBe('global');
+    expect(result.config.multiverse.presets).toEqual({
+      global: {
+        fixer: { provider: 'openai', modelId: 'one', reasoning: 'high' },
+        explorer: { modelId: 'explore' },
+        reviewer: {},
+      },
+      retained: { visualizer: { provider: 'anthropic' } },
+      project: {},
+    });
+  });
+
+  it('deep-merges prototype-like preset and agent names without polluting prototypes', () => {
+    writeFileSync(globalPath, '{"multiverse":{"presets":{"constructor":{"constructor":{"provider":"global"}},"__proto__":{"fixer":{"provider":"ignored"}}}}}');
+    writeFileSync(projectPath, '{"multiverse":{"presets":{"constructor":{"constructor":{"modelId":"project"}},"__proto__":{"fixer":{"modelId":"ignored"}}}}}');
+
+    const result = ConfigLoader.load(createCtx(true, tmpDir), createResolver(globalPath, projectPath));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    const presets = result.config.multiverse.presets ?? {};
+    const prototypeLikePreset = Object.getOwnPropertyDescriptor(presets, 'constructor')?.value;
+    expect(Object.getOwnPropertyDescriptor(prototypeLikePreset ?? {}, 'constructor')?.value).toEqual({ provider: 'global', modelId: 'project' });
+    // `__proto__` names are dropped during parsing rather than reaching any prototype.
+    expect(Object.hasOwn(presets, '__proto__')).toBe(false);
+    expect(Object.getPrototypeOf(presets)).toBe(Object.prototype);
+    expect(({} as Record<string, unknown>).fixer).toBeUndefined();
+  });
+
+  it('allows a project defaultPreset to reference a globally defined preset', () => {
+    writeFileSync(globalPath, JSON.stringify({ multiverse: { defaultPreset: 'other', presets: { smart: {}, other: {} } } }));
+    writeFileSync(projectPath, JSON.stringify({ multiverse: { defaultPreset: 'smart' } }));
+
+    const result = ConfigLoader.load(createCtx(true, tmpDir), createResolver(globalPath, projectPath));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.config.multiverse.defaultPreset).toBe('smart');
+    expect(result.config.multiverse.presets).toEqual({ smart: {}, other: {} });
+  });
+
+  it('ignores untrusted project presets and defaultPreset', () => {
+    writeFileSync(globalPath, JSON.stringify({ multiverse: { defaultPreset: 'global', presets: { global: {} } } }));
+    writeFileSync(projectPath, JSON.stringify({ multiverse: { defaultPreset: 'project', presets: { project: {} } } }));
+
+    const result = ConfigLoader.load(createCtx(false, tmpDir), createResolver(globalPath, projectPath));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.config.multiverse.defaultPreset).toBe('global');
+    expect(result.config.multiverse.presets).toEqual({ global: {} });
+  });
+
+  it('accepts missing preset references and isolates invalid preset blocks', () => {
+    writeFileSync(globalPath, JSON.stringify({ tmux_popup: { enabled: true }, multiverse: { defaultPreset: 'missing' } }));
+    let result = ConfigLoader.load(createCtx(false, tmpDir), createResolver(globalPath));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.config.multiverse.defaultPreset).toBe('missing');
+
+    writeFileSync(
+      globalPath,
+      JSON.stringify({ tmux_popup: { enabled: true }, multiverse: { presets: { smart: { fixer: { reasoning: 'invalid' } } } } }),
+    );
+    result = ConfigLoader.load(createCtx(false, tmpDir), createResolver(globalPath));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.config.tmux_popup.enabled).toBe(true);
+    expect(result.config.multiverse.enabled).toBe(false);
+    expect(result.warnings.join('\n')).toContain('reasoning');
+  });
+
   it('fails on malformed configuration', () => {
     writeFileSync(globalPath, '{ not valid json');
 
