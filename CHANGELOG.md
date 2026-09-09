@@ -1,5 +1,11 @@
 # @0xkahi/pi-arsenal
 
+## 0.3.1
+
+### Patch Changes
+
+- 734b097: add YAGNI principles to fixer subagents
+
 ## 0.3.0
 
 ### Minor Changes
