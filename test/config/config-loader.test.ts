@@ -298,16 +298,20 @@ describe('ConfigLoader', () => {
     });
   });
 
-  it('deep-merges prototype-like preset and agent names using own properties', () => {
-    writeFileSync(globalPath, '{"multiverse":{"presets":{"__proto__":{"constructor":{"provider":"global"}}}}}');
-    writeFileSync(projectPath, '{"multiverse":{"presets":{"__proto__":{"constructor":{"modelId":"project"}}}}}');
+  it('deep-merges prototype-like preset and agent names without polluting prototypes', () => {
+    writeFileSync(globalPath, '{"multiverse":{"presets":{"constructor":{"constructor":{"provider":"global"}},"__proto__":{"fixer":{"provider":"ignored"}}}}}');
+    writeFileSync(projectPath, '{"multiverse":{"presets":{"constructor":{"constructor":{"modelId":"project"}},"__proto__":{"fixer":{"modelId":"ignored"}}}}}');
 
     const result = ConfigLoader.load(createCtx(true, tmpDir), createResolver(globalPath, projectPath));
     expect(result.success).toBe(true);
     if (!result.success) return;
-    const prototypePreset = Object.getOwnPropertyDescriptor(result.config.multiverse.presets ?? {}, '__proto__')?.value;
-    expect(Object.hasOwn(result.config.multiverse.presets ?? {}, '__proto__')).toBe(true);
-    expect(Object.getOwnPropertyDescriptor(prototypePreset ?? {}, 'constructor')?.value).toEqual({ provider: 'global', modelId: 'project' });
+    const presets = result.config.multiverse.presets ?? {};
+    const prototypeLikePreset = Object.getOwnPropertyDescriptor(presets, 'constructor')?.value;
+    expect(Object.getOwnPropertyDescriptor(prototypeLikePreset ?? {}, 'constructor')?.value).toEqual({ provider: 'global', modelId: 'project' });
+    // `__proto__` names are dropped during parsing rather than reaching any prototype.
+    expect(Object.hasOwn(presets, '__proto__')).toBe(false);
+    expect(Object.getPrototypeOf(presets)).toBe(Object.prototype);
+    expect(({} as Record<string, unknown>).fixer).toBeUndefined();
   });
 
   it('allows a project defaultPreset to reference a globally defined preset', () => {

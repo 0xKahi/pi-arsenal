@@ -180,6 +180,54 @@ describe('Multiverse modal', () => {
     expect(lines.length <= 12).toBe(true);
     expect(lines.join('\n')).not.toContain('\u001b[31m');
     expect(lines.join('\n')).toContain('(');
+
+    modal.handleInput('G');
+    expect(modal.render(24).join('\n')).toContain('agent-29');
+  });
+
+  it('scrolls through an oversized group in the multi-preset roster', () => {
+    const modal = dialog({
+      activeAgent: 'default',
+      role: parentRole,
+      megamindAvailable: true,
+      presets: {
+        selection: { kind: 'named', name: 'large' },
+        options: [
+          { selection: { kind: 'baseline' as const }, agents: [{ name: 'small', model: {} }] },
+          {
+            selection: { kind: 'named' as const, name: 'large' },
+            agents: Array.from({ length: 20 }, (_, index) => ({ name: `large-agent-${index}`, model: {} })),
+          },
+        ],
+      },
+    });
+
+    modal.handleInput('\t');
+    modal.handleInput('G');
+    const rendered = modal.render(120).join('\n');
+    expect(rendered).toContain('large-agent-19');
+  });
+
+  it('bounds long preset and agent names to the modal width', () => {
+    const longPreset = 'preset-' + 'x'.repeat(200);
+    const longAgent = 'agent-' + 'y'.repeat(200);
+    const modal = dialog({
+      activeAgent: 'default',
+      role: parentRole,
+      megamindAvailable: true,
+      presets: {
+        selection: { kind: 'named', name: longPreset },
+        options: [
+          { selection: { kind: 'named' as const, name: longPreset }, agents: [{ name: longAgent, model: {} }] },
+          { selection: { kind: 'baseline' as const }, agents: [] },
+        ],
+      },
+    });
+
+    modal.handleInput('\t');
+    const rendered = modal.render(40).join('\n');
+    expect(rendered).not.toContain(longPreset);
+    expect(rendered).not.toContain(longAgent);
   });
 
   it('keeps short tabs compact and cycles Presets before Child Sessions', () => {

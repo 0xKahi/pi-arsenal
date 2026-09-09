@@ -61,6 +61,22 @@
       }
     },
     "multiverse": {
+      "default": {
+        "enabled": false,
+        "defaultAgent": "default",
+        "maxConcurrency": 5,
+        "subagents": {
+          "explorer": {
+            "enabled": true
+          },
+          "fixer": {
+            "enabled": true
+          },
+          "visualizer": {
+            "enabled": true
+          }
+        }
+      },
       "type": "object",
       "properties": {
         "enabled": {

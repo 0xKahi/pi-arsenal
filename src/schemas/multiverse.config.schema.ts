@@ -11,21 +11,13 @@ const PresetModelConfigSchema = SubagentModelConfigSchema.extend({
     .describe('Optional requested reasoning override; omitted values inherit from the subagent model or parent session.'),
 }).strict();
 
-const prefixRecordKeys = (value: unknown): unknown => {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return value;
-  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key === '' ? '' : `.${key}`, entry]));
-};
-
-const unprefixRecordKeys = <T>(record: Record<string, T>): Record<string, T> =>
-  Object.fromEntries(Object.entries(record).map(([key, entry]) => [key.slice(1), entry]));
-
-// Zod records assign parsed keys onto ordinary objects. Prefixing avoids prototype-key
-// collisions while parsing, then Object.fromEntries restores safe own properties.
-const PresetAgentsSchema = z.preprocess(prefixRecordKeys, z.record(z.string().min(1), PresetModelConfigSchema)).transform(unprefixRecordKeys);
+// Zod skips `__proto__` keys while parsing records, so such a preset or agent name is
+// dropped rather than polluting a prototype. Every other name, including `constructor`,
+// round-trips as an ordinary own property; readers still use own-key-safe lookups.
+const PresetAgentsSchema = z.record(z.string().min(1), PresetModelConfigSchema);
 
 const PresetsSchema = z
-  .preprocess(prefixRecordKeys, z.record(z.string().min(1), PresetAgentsSchema))
-  .transform(unprefixRecordKeys)
+  .record(z.string().min(1), PresetAgentsSchema)
   .optional()
   .describe('Named model lineup overrides by preset and agent. Entries may omit fields to inherit subagent and parent-session values.');
 

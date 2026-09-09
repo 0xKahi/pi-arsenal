@@ -14,7 +14,7 @@ describe('Multiverse preset configuration schema', () => {
       presets: {
         empty: {},
         sparse: { fixer: { reasoning: 'high' } },
-        constructor: { '__proto__': {}, agent: {} },
+        constructor: { constructor: {}, agent: {} },
       },
     });
 
@@ -22,6 +22,16 @@ describe('Multiverse preset configuration schema', () => {
     expect(config.presets?.empty).toEqual({});
     expect(config.presets?.sparse?.fixer).toEqual({ reasoning: 'high' });
     expect(Object.hasOwn(config.presets ?? {}, 'constructor')).toBe(true);
+    expect(Object.hasOwn(config.presets?.constructor ?? {}, 'constructor')).toBe(true);
+  });
+
+  it('drops __proto__ names instead of polluting prototypes', () => {
+    const config = MultiverseConfigSchema.parse(JSON.parse('{"presets":{"__proto__":{"fixer":{"modelId":"x"}},"smart":{}}}'));
+
+    expect(Object.hasOwn(config.presets ?? {}, '__proto__')).toBe(false);
+    expect(Object.hasOwn(config.presets ?? {}, 'smart')).toBe(true);
+    expect(Object.getPrototypeOf(config.presets ?? {})).toBe(Object.prototype);
+    expect(({} as Record<string, unknown>).fixer).toBeUndefined();
   });
 
   it.each([

@@ -22,6 +22,7 @@ export class PresetsTab implements ModalTab {
   private selected: number;
   private scrollOffset = 0;
   private lastHeight = 1;
+  private preserveHeadingContext = false;
 
   public constructor(
     private readonly theme: Theme,
@@ -47,11 +48,11 @@ export class PresetsTab implements ModalTab {
     if (this.options.length === 1) {
       const option = this.options[0];
       if (option === undefined) return;
-      const maxOffset = Math.max(0, Math.max(1, this.agentLines(option).length) - Math.max(1, this.lastHeight - 1));
+      const { bodyHeight, maxOffset } = this.singlePresetViewport(this.lastHeight, this.agentLines(option).length);
       if (action === 'step-back') this.scrollOffset = Math.max(0, this.scrollOffset - 1);
       if (action === 'step-forward') this.scrollOffset = Math.min(maxOffset, this.scrollOffset + 1);
-      if (action === 'page-back') this.scrollOffset = Math.max(0, this.scrollOffset - Math.max(1, this.lastHeight - 1));
-      if (action === 'page-forward') this.scrollOffset = Math.min(maxOffset, this.scrollOffset + Math.max(1, this.lastHeight - 1));
+      if (action === 'page-back') this.scrollOffset = Math.max(0, this.scrollOffset - bodyHeight);
+      if (action === 'page-forward') this.scrollOffset = Math.min(maxOffset, this.scrollOffset + bodyHeight);
       if (action === 'first') this.scrollOffset = 0;
       if (action === 'last') this.scrollOffset = maxOffset;
       return;
@@ -79,7 +80,9 @@ export class PresetsTab implements ModalTab {
     }
     if (this.selected !== previous) {
       this.scrollOffset = 0;
+      this.preserveHeadingContext = false;
     } else {
+      this.preserveHeadingContext = true;
       const maxOffset = Math.max(0, this.allLines(1).length - Math.max(1, this.lastHeight - 1));
       if (action === 'step-back' || action === 'page-back' || action === 'first')
         this.scrollOffset = Math.max(0, action === 'page-back' ? this.scrollOffset - Math.max(1, this.lastHeight - 1) : 0);
@@ -100,7 +103,7 @@ export class PresetsTab implements ModalTab {
     const showOverflow = lines.length > viewport;
     const listHeight = showOverflow ? Math.max(1, viewport - 1) : viewport;
     const selectedHeading = this.headingLineIndex(this.selected);
-    this.keepHeadingVisible(selectedHeading, listHeight, lines.length);
+    if (!this.preserveHeadingContext) this.keepHeadingVisible(selectedHeading, listHeight, lines.length);
     const visible = lines.slice(this.scrollOffset, this.scrollOffset + listHeight);
     if (showOverflow) {
       visible.push(this.theme.fg('dim', `  (${this.scrollOffset + 1}-${Math.min(lines.length, this.scrollOffset + listHeight)}/${lines.length})`));
@@ -112,15 +115,19 @@ export class PresetsTab implements ModalTab {
     const option = this.options[0];
     if (option === undefined) return [];
     const body = this.agentLines(option);
-    const showOverflow = body.length > Math.max(0, height - 1);
-    const bodyHeight = Math.max(0, height - 1 - (showOverflow ? 1 : 0));
-    const maxOffset = Math.max(0, body.length - bodyHeight);
+    const { bodyHeight, maxOffset, showOverflow } = this.singlePresetViewport(height, body.length);
     this.scrollOffset = Math.min(this.scrollOffset, maxOffset);
     const lines = [this.renderHeading(option, true), ...body.slice(this.scrollOffset, this.scrollOffset + bodyHeight)];
     if (showOverflow && height > 1) {
       lines.push(this.theme.fg('dim', `  (${this.scrollOffset + 1}-${Math.min(body.length, this.scrollOffset + bodyHeight)}/${body.length})`));
     }
     return lines.map(line => fitLine(line, width));
+  }
+
+  private singlePresetViewport(height: number, bodyLength: number): { bodyHeight: number; maxOffset: number; showOverflow: boolean } {
+    const showOverflow = bodyLength > Math.max(0, height - 1);
+    const bodyHeight = Math.max(0, height - 1 - (showOverflow ? 1 : 0));
+    return { bodyHeight, maxOffset: Math.max(0, bodyLength - bodyHeight), showOverflow };
   }
 
   private allLines(width: number): string[] {

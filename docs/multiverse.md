@@ -14,6 +14,16 @@ Multiverse adds durable parent-owned subagents, initially shipping `explorer`, `
       "explorer": { "enabled": true },
       "fixer": { "enabled": true },
       "visualizer": { "enabled": true }
+    },
+    "defaultPreset": "smart",
+    "presets": {
+      "smart": {
+        "explorer": { "provider": "anthropic", "modelId": "claude-sonnet-4-5", "reasoning": "high" },
+        "fixer": { "reasoning": "high" }
+      },
+      "cheap": {
+        "explorer": { "modelId": "claude-haiku-4-5" }
+      }
     }
   }
 }
@@ -23,7 +33,44 @@ Multiverse adds durable parent-owned subagents, initially shipping `explorer`, `
 - `defaultAgent`: `default` or `megamind`, restored by append-only `arsenal-parent-agent` entries.
 - `maxConcurrency`: one batch-wide pool, `1..10`, default `5`.
 - `subagents`: settings keyed by registered agent name; names without settings default to enabled with parent-model fallback. Configuration alone does not register an agent.
+- `defaultPreset`: optional name of the preset each session starts on. A name that matches no preset is not an error; the session simply starts on the built-in default.
+- `presets`: optional map of preset name -> agent name -> partial model settings (`provider`, `modelId`, `reasoning`). Every field is optional, empty presets and empty agent entries are valid, and presets never register or enable an agent.
 - Nested global and trusted-project settings merge by name; invalid Multiverse settings disable only that feature.
+
+## Model presets
+
+A preset is a named model lineup for the subagents. It is a convenience layer over `subagents.<agent>.model`, not a replacement for it.
+
+### Field-level inheritance
+
+Each field resolves independently:
+
+```
+selected preset field  ->  subagents.<agent>.model field  ->  current parent session value
+```
+
+In the example above, `smart` gives `fixer` only `"reasoning": "high"`. The fixer keeps whatever `provider` and `modelId` its subagent settings define, and if those are absent too, it inherits the parent session's model. An agent omitted from a preset (`visualizer`, in both presets above) behaves exactly as it does with no preset selected. The built-in default contributes no overrides at all, so switching back to it restores plain subagent behavior. Selecting a preset never rewrites configuration.
+
+### Selection is session-local
+
+Selection lives in memory for the current parent session only:
+
+- Each session starts on `defaultPreset` when it names an existing preset, otherwise on the built-in default.
+- Starting, reopening, or switching to another session, and reloading the extension, all re-initialize selection from configuration. A manual switch is never restored.
+- Switching persona or navigating conversation branches inside the same live session does not reset the selected preset.
+- If the selected preset is removed from configuration, resolution and the picker fall back to the built-in default.
+- Nothing is written: no config file changes and no preference entry, unlike persona selection.
+
+### When a switch takes effect
+
+Each `spawn` call captures the active preset and the composed per-agent settings once, before dispatch:
+
+- **Create and continue alike** use the capture of the call that dispatched them, so a continued child keeps its conversation checkpoint but runs the new interaction under the currently selected preset.
+- **Already-dispatched batches are unaffected** by a later switch, including tasks still queued behind `maxConcurrency`. A switch applies from the next `spawn` call onward.
+
+### Requested versus runtime model
+
+The picker shows configured intent, not a guarantee. It performs no authentication or availability probe. At run time the effective configured model is tried first and the parent model remains the fallback, so an unavailable or unauthenticated preset model falls back to the parent model — a preset does not add a retry of the underlying subagent model. Likewise the reasoning shown is the *requested* level; runtime clamps it to what the model actually chosen supports. Because fields are inherited individually, a partial override can produce a provider/model pair that does not exist; the parent fallback covers it.
 
 ## Durable children
 
@@ -41,7 +88,25 @@ Availability is resolved at session start after arsenal config initialization. `
 
 ## The `/multiverse` command
 
-When Multiverse is enabled, `/multiverse` and its Pi Vim key event open the same Vim-navigable modal. The **Switch Agent** tab selects Default or Megamind and starts on the currently active persona. A successful selection is persisted in an `arsenal-parent-agent` entry, updates the displayed agent name, and applies the matching prompt/tool policy to the next turn. In a child session both choices are visibly disabled. The **Child Sessions** tab is a coming-soon placeholder.
+When Multiverse is enabled, `/multiverse` and its Pi Vim key event open the same Vim-navigable modal with three tabs: **Switch Agents**, **Presets**, and **Child Sessions**.
+
+The **Switch Agents** tab selects Default or Megamind and starts on the currently active persona. A successful selection is persisted in an `arsenal-parent-agent` entry, updates the displayed agent name, and applies the matching prompt/tool policy to the next turn. In a child session both choices are visibly disabled. The **Child Sessions** tab is a coming-soon placeholder.
+
+The **Presets** tab lists the built-in `[default]` first, then every configured preset, grouped with one preview row per available registered agent:
+
+```
+  [default]
+    explorer: claude-sonnet-4-5 (anthropic) / requested reasoning: low
+    fixer: inherits parent model (inherits parent provider) / requested reasoning: off
+
+> [smart] (active)
+    explorer: claude-sonnet-4-5 (anthropic) / requested reasoning: high
+    fixer: inherits parent model (inherits parent provider) / requested reasoning: high
+```
+
+The effective selection is marked `(active)` and focused when the tab opens. Rows show the values after field inheritance; unresolved fields say `inherits parent …` rather than inventing a value. Only available registered agents appear — a preset naming a disabled or unregistered agent adds no row and no spawn target — and an empty roster shows `No available agents.` instead of fabricated entries. A configured preset literally named `default` stays selectable and is distinguished as `[default] (configured)` from the built-in `[default] (built-in)`.
+
+Controls follow the rest of the modal: `Tab`/`Shift+Tab` cycle tabs, `j`/`k` (and page/first/last motions) move between presets, `Enter` activates the focused preset and closes the modal, `Esc` cancels and leaves the selection unchanged. When a preset's agent rows exceed the viewport, scrolling reaches every row. Preset switching is disabled in child sessions, where confirmation has no effect: the tab controls what the parent dispatches, not the current child's own model. Switching a preset changes no persona, parent model, or agent availability.
 
 The command and key-event handler are activated only after enabled configuration is resolved at `session_start`; disabled Multiverse does not expose them.
 
