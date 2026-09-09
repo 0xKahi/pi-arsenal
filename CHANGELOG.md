@@ -1,5 +1,11 @@
 # @0xkahi/pi-arsenal
 
+## 0.3.2
+
+### Patch Changes
+
+- 4cf7d1e: added subAgent presets to multiverse
+
 ## 0.3.1
 
 ### Patch Changes
