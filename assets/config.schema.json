@@ -61,22 +61,6 @@
       }
     },
     "multiverse": {
-      "default": {
-        "enabled": false,
-        "defaultAgent": "default",
-        "maxConcurrency": 5,
-        "subagents": {
-          "explorer": {
-            "enabled": true
-          },
-          "fixer": {
-            "enabled": true
-          },
-          "visualizer": {
-            "enabled": true
-          }
-        }
-      },
       "type": "object",
       "properties": {
         "enabled": {
@@ -99,6 +83,52 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 10
+        },
+        "defaultPreset": {
+          "description": "Initial named model preset when it exists; missing or unknown names use the built-in default.",
+          "type": "string"
+        },
+        "presets": {
+          "description": "Named model lineup overrides by preset and agent. Entries may omit fields to inherit subagent and parent-session values.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "minLength": 1
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "description": "Optional provider override; omitted values inherit from the subagent model or parent session.",
+                  "type": "string"
+                },
+                "modelId": {
+                  "description": "Optional model ID override; omitted values inherit from the subagent model or parent session.",
+                  "type": "string"
+                },
+                "reasoning": {
+                  "description": "Optional requested reasoning override; omitted values inherit from the subagent model or parent session.",
+                  "type": "string",
+                  "enum": [
+                    "off",
+                    "minimal",
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh",
+                    "max"
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          }
         },
         "subagents": {
           "default": {

@@ -25,8 +25,8 @@ import type { Hint, ModalLayer, ModalTab, NavigationScheme } from './types';
 /** Framing style: inline rules, or a rounded border for host-centered overlays. */
 export type ModalFrame = 'inline' | 'bordered';
 
-/** Height policy: natural content height, or bounded to half the terminal. */
-export type ModalHeight = 'auto' | 'half';
+/** Height policy: natural content, padded half-terminal, or unpadded half-terminal height. */
+export type ModalHeight = 'auto' | 'half' | 'fit';
 
 export interface ModalDialogFilterOptions {
   /** Query seeded into the filter input and applied to tabs on open. */
@@ -165,10 +165,14 @@ export class ModalDialog<TResult> implements Component, Focusable {
     const safeWidth = Math.max(3, width);
     if (this.frame === 'bordered') {
       const inner = safeWidth - 2;
-      const lines = this.buildContentLines(inner, this.contentHeight());
+      let lines = this.buildContentLines(inner, this.contentHeight());
       const borderColor = (str: string) => this.theme.fg('border', str);
       const horizontal = '─'.repeat(inner);
       const side = borderColor('│');
+      if (this.height === 'fit') {
+        const innerBudget = Math.max(1, (this.heightBudget() ?? 3) - 2);
+        if (lines.length > innerBudget) lines = [...lines.slice(0, innerBudget - 1), ''];
+      }
       return [borderColor(`╭${horizontal}╮`), ...lines.map(line => `${side}${padLine(line, inner)}${side}`), borderColor(`╰${horizontal}╯`)];
     }
 
@@ -239,7 +243,7 @@ export class ModalDialog<TResult> implements Component, Focusable {
 
   /** Total framed-line budget for bounded dialogs; undefined when natural. */
   private heightBudget(): number | undefined {
-    if (this.height !== 'half') return undefined;
+    if (this.height !== 'half' && this.height !== 'fit') return undefined;
     return Math.max(3, Math.floor(normalizeTerminalRows(this.tui.terminal.rows) / 2));
   }
 
@@ -277,7 +281,7 @@ export class ModalDialog<TResult> implements Component, Focusable {
 
     const content = this.content().render(width, contentHeight);
     if (contentHeight !== undefined) {
-      while (content.length < contentHeight) content.push('');
+      if (this.height !== 'fit') while (content.length < contentHeight) content.push('');
       content.length = Math.min(content.length, contentHeight);
     }
     lines.push(...content, '');
