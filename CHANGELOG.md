@@ -1,5 +1,11 @@
 # @0xkahi/pi-arsenal
 
+## 0.3.3
+
+### Patch Changes
+
+- 2d8bf98: show shared context in spawn tool
+
 ## 0.3.2
 
 ### Patch Changes
