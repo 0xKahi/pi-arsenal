@@ -8,11 +8,23 @@ import type { TaskPhase, TaskProgress, ToolTrailEntry } from './spawn-progress.t
 
 /** Collapsed rows are capped so a large batch cannot eat the editor. */
 export const MAX_VISIBLE_TASK_ROWS = 10;
+export const MAX_SHARED_CONTEXT_LINES = 10;
 
 /** Minimal structural theme, so the component is renderable in tests without a full Theme. */
 export interface SpawnTheme {
   fg: (color: ThemeColor, text: string) => string;
   bold: (text: string) => string;
+}
+
+/**
+ * Everything one repaint needs: the per-task rows plus the batch-scoped values that are
+ * properties of the call rather than of any single task.
+ */
+export interface SpawnResultUpdateOptions {
+  rows: SpawnTaskRow[];
+  expanded: boolean;
+  boundaryNonce?: string;
+  sharedContext?: string;
 }
 
 /** One task as the view needs it, merged from live progress, settled interactions, and call args. */
@@ -50,6 +62,7 @@ export class SpawnResultComponent implements Component {
   private expanded = false;
   private tick = 0;
   private boundaryNonce?: string;
+  private sharedContext?: string;
   private timer: ReturnType<typeof setInterval> | undefined;
 
   public constructor(
@@ -57,11 +70,12 @@ export class SpawnResultComponent implements Component {
     private readonly requestRender: () => void,
   ) {}
 
-  public update(rows: SpawnTaskRow[], expanded: boolean, boundaryNonce?: string): void {
-    this.boundaryNonce = boundaryNonce;
-    this.rows = rows;
-    this.expanded = expanded;
-    const unsettled = rows.some(row => UNSETTLED.has(row.phase));
+  public update(options: SpawnResultUpdateOptions): void {
+    this.boundaryNonce = options.boundaryNonce;
+    this.sharedContext = options.sharedContext;
+    this.rows = options.rows;
+    this.expanded = options.expanded;
+    const unsettled = options.rows.some(row => UNSETTLED.has(row.phase));
     if (unsettled && !this.timer) {
       this.timer = setInterval(() => {
         this.tick += 1;
@@ -104,6 +118,7 @@ export class SpawnResultComponent implements Component {
           '',
         ),
       );
+    if (this.expanded) lines.push(...this.renderSharedContext(safeWidth));
     const visible = this.expanded ? this.rows : this.rows.slice(0, MAX_VISIBLE_TASK_ROWS);
     visible.forEach((row, position) => {
       const isLast = position === this.rows.length - 1;
@@ -116,6 +131,21 @@ export class SpawnResultComponent implements Component {
     const footer = this.renderFooter(safeWidth);
     if (footer) lines.push(footer);
     if (this.expanded) lines.push(...this.renderExpanded(safeWidth));
+    return lines;
+  }
+
+  private renderSharedContext(safeWidth: number): string[] {
+    const indent = treeContinuation(false);
+    const lines = [truncateToWidth(this.theme.fg('dim', `${indent}󰦪 shared context:`), safeWidth, '')];
+    const body = this.sharedContext?.trim() ? plain(this.sharedContext) : 'none';
+    const wrapped = wrapTextWithAnsi(body, Math.max(1, safeWidth - indent.length));
+    const visible = wrapped.slice(0, MAX_SHARED_CONTEXT_LINES);
+    lines.push(...visible.map(line => truncateToWidth(this.theme.fg('dim', indent + line), safeWidth, '')));
+    if (wrapped.length > MAX_SHARED_CONTEXT_LINES) {
+      const remaining = wrapped.length - MAX_SHARED_CONTEXT_LINES;
+      lines.push(truncateToWidth(this.theme.fg('dim', `${indent}… ${remaining} more line${remaining === 1 ? '' : 's'}`), safeWidth, ''));
+    }
+    lines.push(this.theme.fg('dim', indent));
     return lines;
   }
 

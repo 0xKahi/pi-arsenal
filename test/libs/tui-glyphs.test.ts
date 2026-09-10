@@ -12,8 +12,8 @@ describe('shared TUI glyphs', () => {
     const ask = new P2pAskBatchResultComponent(theme as unknown as Theme, () => {});
     ask.update({ kind: 'batch', entries: [{ to: 'alpha', state: 'success', from: 'alpha', reply: 'ok' }] }, [{ to: 'alpha', prompt: 'x' }], false);
     const spawn = new SpawnResultComponent(theme, () => {});
-    spawn.update(
-      buildSpawnRows({
+    spawn.update({
+      rows: buildSpawnRows({
         args: {
           context: 'c',
           tasks: [
@@ -23,8 +23,8 @@ describe('shared TUI glyphs', () => {
         },
         details: { version: 1, kind: 'spawn', interactions: [childInteraction({ taskIndex: 0, status: 'success' })] },
       }),
-      false,
-    );
+      expanded: false,
+    });
 
     const askOutput = ask.render(80).join('\n');
     const spawnOutput = spawn.render(80).join('\n');

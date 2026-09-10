@@ -111,7 +111,12 @@ export function createSpawnTool(host: SpawnToolHost): ToolDefinition<typeof spaw
           0,
         );
       }
-      component.update(buildSpawnRows({ args: context?.args, details }), expanded, details?.boundaryNonce);
+      component.update({
+        rows: buildSpawnRows({ args: context?.args, details }),
+        expanded,
+        boundaryNonce: details?.boundaryNonce,
+        sharedContext: context?.args?.context,
+      });
       return component;
     },
   };
