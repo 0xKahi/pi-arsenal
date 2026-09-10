@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { SpawnOrchestratorDependencies } from '../../../../../src/extensions/multiverse/orchestrator/spawn-orchestrator.ts';
 import { isSpawnToolDetails } from '../../../../../src/extensions/multiverse/results/child-interaction.ts';
+import { buildResultEnvelope } from '../../../../../src/extensions/multiverse/results/result-envelope.ts';
 import { createSpawnTool, type SpawnToolHost } from '../../../../../src/extensions/multiverse/tools/spawn/spawn.tool.ts';
 import { SpawnProgress } from '../../../../../src/extensions/multiverse/tools/spawn/spawn-progress.ts';
 import { childInteraction } from '../../interaction-fixture.ts';
@@ -40,6 +41,7 @@ describe('createSpawnTool', () => {
     expect(text).not.toContain('Spawn dispatched');
     expect(isSpawnToolDetails(result.details)).toBe(true);
     expect(result.details.interactions).toHaveLength(1);
+    expect(text).toBe(buildResultEnvelope(result.details.interactions, result.details.boundaryNonce).content);
   });
 
   it('is unavailable outside an eligible Megamind parent session', async () => {
@@ -73,12 +75,12 @@ describe('createSpawnTool', () => {
   });
 
   it('appends exactly one manifest after dispatch', async () => {
-    const appended: string[] = [];
-    const tool = createSpawnTool(host({ appendManifest: type => appended.push(type) }));
+    const appended: Array<{ type: string; context: string }> = [];
+    const tool = createSpawnTool(host({ appendManifest: (type, manifest) => appended.push({ type, context: manifest.context }) }));
 
     await tool.execute('call-1', validInput as never, undefined, undefined, ctx);
 
-    expect(appended).toEqual(['arsenal-spawn-manifest']);
+    expect(appended).toEqual([{ type: 'arsenal-spawn-manifest', context: validInput.context }]);
   });
 
   it('keeps live progress in details and only a fixed receipt in model-facing content', async () => {

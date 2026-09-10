@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import type { ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
+import { visibleWidth } from '@earendil-works/pi-tui';
 import type { SpawnToolDetails } from '../../../../../src/extensions/multiverse/results/child-interaction.ts';
 import { createSpawnTool, type SpawnToolHost } from '../../../../../src/extensions/multiverse/tools/spawn/spawn.tool.ts';
 import { SpawnProgress } from '../../../../../src/extensions/multiverse/tools/spawn/spawn-progress.ts';
@@ -15,9 +16,9 @@ import { childInteraction } from '../../interaction-fixture.ts';
 /** Identity theme: assertions read the rendered text, not escape sequences. */
 const theme: SpawnTheme = { fg: (_color, text) => text, bold: text => text };
 
-const render = (rows: SpawnTaskRow[], expanded = false, width = 120): string => {
+const render = (rows: SpawnTaskRow[], expanded = false, width = 120, sharedContext?: string): string => {
   const component = new SpawnResultComponent(theme, () => {});
-  component.update(rows, expanded);
+  component.update({ rows, expanded, sharedContext });
   const output = component.render(width).join('\n');
   component.dispose();
   return output;
@@ -94,7 +95,7 @@ describe('SpawnResultComponent', () => {
     progress.start(1);
     const component = new SpawnResultComponent(theme, () => {});
     const update = () => {
-      component.update(buildSpawnRows({ args, details: details(progress), now: 1000 }), false, 'boundary-nonce');
+      component.update({ rows: buildSpawnRows({ args, details: details(progress), now: 1000 }), expanded: false, boundaryNonce: 'boundary-nonce' });
       return component.render(120).join('\n');
     };
     expect(update()).toBe([
@@ -228,10 +229,83 @@ describe('SpawnResultComponent', () => {
       bold: text => text,
     };
     const component = new SpawnResultComponent(brokenTheme, () => {});
-    component.update(buildSpawnRows({ args, details: undefined }), false);
+    component.update({ rows: buildSpawnRows({ args, details: undefined }), expanded: false });
 
     expect(component.render(80).join('\n')).toContain('1. fixer · queued');
     component.dispose();
+  });
+});
+
+describe('shared context', () => {
+  const rows: SpawnTaskRow[] = [{
+    index: 0,
+    label: 'task 1',
+    agent: 'fixer',
+    action: 'create',
+    phase: 'queued',
+    toolUses: 0,
+    toolRunning: false,
+    trail: [],
+    prompt: 'own task text',
+  }];
+
+  it('appears after the header and before the first task row when expanded', () => {
+    const component = new SpawnResultComponent(theme, () => {});
+    component.update({ rows, expanded: true, boundaryNonce: 'a4f9c2', sharedContext: 'Repo details' });
+    const lines = component.render(120);
+    expect(lines.findIndex(line => line.includes('spawn a4f9c2'))).toBeLessThan(lines.findIndex(line => line.includes('shared context:')));
+    expect(lines.findIndex(line => line.includes('shared context:'))).toBeLessThan(lines.findIndex(line => line.includes('fixer [1]')));
+    component.dispose();
+  });
+
+  it('shows a short context in full without a more-lines suffix', () => {
+    const output = renderLines(rows, true, 120, 'short context');
+    expect(output.join('\n')).toContain('short context');
+    expect(output.join('\n')).not.toContain('more lines');
+  });
+
+  it('caps many source lines and reports the omitted rendered-line count', () => {
+    const output = renderLines(rows, true, 120, Array.from({ length: 14 }, (_, index) => `line ${index + 1}`).join('\n'));
+    expect(output).toContain('│  … 4 more lines');
+  });
+
+  it('caps a single paragraph after wrapping at a narrow width', () => {
+    const output = renderLines(rows, true, 40, 'word '.repeat(100));
+    expect(output.some(line => line.includes('more lines'))).toBe(true);
+    const labelIndex = output.findIndex(line => line.includes('shared context:'));
+    const rowIndex = output.findIndex(line => line.includes('fixer [1]'));
+    const contextLines = output.slice(labelIndex + 1, rowIndex).filter(line => line.startsWith('│  '));
+    expect(contextLines).toHaveLength(12);
+    expect(contextLines.at(-2)).toContain('more lines');
+  });
+
+  it('renders none for absent and empty context', () => {
+    expect(renderLines(rows, true).join('\n')).toContain('shared context:\n│  none');
+    expect(renderLines(rows, true, 120, '').join('\n')).toContain('shared context:\n│  none');
+  });
+
+  it('sanitizes context and bounds every rendered line', () => {
+    const output = renderLines(rows, true, 40, `\u001b[31m${'x'.repeat(200)}\u0007`);
+    for (const line of output) {
+      expect(line).not.toContain('\u001b');
+      expect(line).not.toContain('\u0007');
+      expect(visibleWidth(line)).toBeLessThanOrEqual(40);
+    }
+  });
+
+  // The label carries a double-width glyph, so a terminal narrower than the label must
+  // truncate it like every other line rather than overflow the parent frame.
+  it('bounds the label itself when the terminal is narrower than the label', () => {
+    for (const line of renderLines(rows, true, 8, 'x'.repeat(200))) {
+      expect(visibleWidth(line)).toBeLessThanOrEqual(8);
+    }
+  });
+
+  it('omits the block when collapsed and keeps each prompt task-specific', () => {
+    expect(renderLines(rows, false, 120, 'shared secret').join('\n')).not.toContain('shared context:');
+    const expanded = renderLines(rows, true, 120, 'shared secret').join('\n');
+    expect(expanded).toContain('prompt:\n   own task text');
+    expect(expanded).not.toContain('prompt:\n   shared secret');
   });
 });
 
@@ -243,12 +317,14 @@ describe('spawn renderResult', () => {
     } satisfies SpawnToolHost);
     const context = { args, invalidate: () => {}, lastComponent: undefined as unknown };
 
-    const first = tool.renderResult?.({ content: [] } as never, { expanded: false, isPartial: true }, {} as Theme, context as never);
+    const first = tool.renderResult?.({ content: [] } as never, { expanded: false, isPartial: true }, theme as unknown as Theme, context as never);
     context.lastComponent = first;
-    const second = tool.renderResult?.({ content: [] } as never, { expanded: false, isPartial: true }, {} as Theme, context as never);
+    const second = tool.renderResult?.({ content: [] } as never, { expanded: false, isPartial: true }, theme as unknown as Theme, context as never);
 
     expect(first).toBeInstanceOf(SpawnResultComponent);
     expect(second).toBe(first as never);
+    const expanded = tool.renderResult?.({ content: [] } as never, { expanded: true, isPartial: true }, theme as unknown as Theme, context as never);
+    expect((expanded as SpawnResultComponent).render(120).join('\n')).toContain('shared context:\n│  shared');
     (first as SpawnResultComponent).dispose();
   });
 
@@ -280,9 +356,9 @@ function details(progress: SpawnProgress): SpawnToolDetails {
   return { version: 1, kind: 'spawn', interactions: [], progress: progress.snapshot() };
 }
 
-function renderLines(rows: SpawnTaskRow[], expanded = false, width = 120): string[] {
+function renderLines(rows: SpawnTaskRow[], expanded = false, width = 120, sharedContext?: string): string[] {
   const component = new SpawnResultComponent(theme, () => {});
-  component.update(rows, expanded);
+  component.update({ rows, expanded, sharedContext });
   const lines = component.render(width);
   component.dispose();
   return lines;
