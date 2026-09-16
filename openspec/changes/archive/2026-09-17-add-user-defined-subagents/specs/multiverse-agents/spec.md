@@ -1,63 +1,4 @@
-# multiverse-agents Specification
-
-## Purpose
-
-Defines subagent definitions, activation-scoped availability, durable child identity, and the prompt and tool policies applied while Multiverse is enabled.
-
-## Requirements
-
-### Requirement: Subagent definition format
-Each bundled subagent SHALL be declared in markdown with YAML frontmatter containing `name`, `tools`, `skills`, and non-empty parent-facing `metadata`, followed by a non-empty child prompt body. Invalid YAML, invalid field shapes, missing required fields, or an empty body SHALL prevent that definition from loading and identify the file and problem. Repeated tool and skill names SHALL be deduplicated in first-occurrence order without rejecting the definition.
-
-#### Scenario: Valid definition loads
-- **WHEN** a definition has valid required frontmatter and a non-empty body
-- **THEN** it is registered under its declared name with its prompt, metadata, and normalized capability lists
-
-#### Scenario: Invalid definition is rejected
-- **WHEN** a definition is malformed, incomplete, or has an empty prompt body
-- **THEN** it is not registered and the user is shown the file and problem
-
-#### Scenario: Duplicate capabilities are normalized
-- **WHEN** a definition repeats a tool or skill name
-- **THEN** only its first occurrence is retained and duplication does not make the agent unavailable
-
-### Requirement: Permissive capability handling
-Unknown declared tools SHALL NOT prevent an otherwise valid enabled definition from being available. During enabled session activation, the system SHALL notify the user of unknown declared tools, identifying the definition and names, and SHALL rely on Pi to exclude unregistered tools from activation. Warnings SHALL NOT be repeated on every turn or spawn call. Unknown skills SHALL be ignored without warnings or availability rejection in V1; skill support and validation are deferred.
-
-#### Scenario: Unknown tool is advisory
-- **WHEN** an otherwise valid enabled definition includes an unregistered tool
-- **THEN** activation warns the user, the agent remains available, and only registered declared tools become active
-
-#### Scenario: Unknown skill is ignored
-- **WHEN** an otherwise valid definition includes an unknown skill name
-- **THEN** it remains available without a skill warning or validation failure
-
-### Requirement: Bundled subagents
-V1 SHALL ship `explorer`, `fixer`, and `visualizer` as its initial bundled definitions, each independently enableable, and SHALL additionally register user-supplied definitions discovered from the conventional user agents directories. Declared subagent names SHALL be non-empty strings independent of filename and SHALL NOT be restricted to a hardcoded bundled-name list. The registered definitions SHALL be the source of truth for available names. The bundled prompt bodies and tool lists SHALL be sourced from the maintainer's LLW Multiverse bundle, with the accidental trailing `` `;`` excluded from the Visualizer source, and their initial skill lists SHALL be empty. Only enabled, successfully parsed and registered definitions SHALL be accepted as new child targets, whether bundled or user-supplied. Conflicting definitions claiming the same agent name SHALL produce a registration diagnostic rather than silently overwrite one another.
-
-#### Scenario: Enabled roster
-- **WHEN** all three bundled definitions are enabled and valid and the user agents directories contribute no definitions
-- **THEN** `explorer`, `fixer`, and `visualizer` are the complete set of new-child targets
-
-#### Scenario: Roster includes user-supplied agents
-- **WHEN** the bundled definitions are enabled and a user-supplied definition discovered in a user agents directory registers under a new name
-- **THEN** the new-child targets are the enabled bundled agents together with that user-supplied agent
-
-#### Scenario: No definition available
-- **WHEN** no bundled or user-supplied definition is enabled and valid
-- **THEN** no new-child target is offered and the user is informed
-
-#### Scenario: Registered non-bundled name
-- **WHEN** a valid definition declares a new name not in the initial shipped roster
-- **THEN** it is registered under that name regardless of filename and can be activated or spawned when enabled
-
-#### Scenario: Unregistered child name
-- **WHEN** an enabled child identity names an agent absent from the registry
-- **THEN** activation reports that the definition is unavailable rather than treating a hardcoded enum as authoritative
-
-#### Scenario: Conflicting registrations
-- **WHEN** separate definition files claim the same agent name
-- **THEN** the conflict is reported rather than silently replacing an existing registration
+## ADDED Requirements
 
 ### Requirement: User agent directory discovery
 Definition discovery SHALL consider two conventional user agents directories in addition to the bundled directory: a global directory under the agent directory's `extensions/pi-arsenal/agents/`, and a project directory at `.pi/extensions/pi-arsenal/agents/` under the project working directory. Each directory SHALL contribute its `.md` files in alphabetical order. A user-supplied file SHALL be parsed and validated by the same definition format rules as a bundled file, with no additional required fields and no relaxed ones. The declared agent name SHALL come from the definition's frontmatter; the filename SHALL carry no meaning and SHALL NOT be required to match the declared name. Successfully registered user-supplied definitions SHALL be indistinguishable from bundled ones to parent prompt rendering, spawn target validation, model resolution, child tool and prompt policy, and durable child identity.
@@ -146,24 +87,34 @@ A file that cannot be read, fails definition validation, or loses a name conflic
 - **WHEN** a user agents directory exists but cannot be read
 - **THEN** it is reported once during activation and does not repeat on every turn or spawn call
 
-### Requirement: Durable child identity
-A newly created child session SHALL contain exactly one file-wide `arsenal-subagent` custom identity entry with schema version, subagent name, and parent session ID. While Multiverse is enabled, SDK creation, reload, and CLI reopen SHALL scan the complete session entries, recognize the session as a child, and restore the named role independently of the active conversation branch. While Multiverse is disabled, the marker SHALL remain stored but SHALL impose no role, prompt, or tool behavior.
+## MODIFIED Requirements
 
-#### Scenario: New child is marked before its first interaction
-- **WHEN** an enabled parent creates a child
-- **THEN** its session state contains the identity entry before the first child prompt is processed
+### Requirement: Bundled subagents
+V1 SHALL ship `explorer`, `fixer`, and `visualizer` as its initial bundled definitions, each independently enableable, and SHALL additionally register user-supplied definitions discovered from the conventional user agents directories. Declared subagent names SHALL be non-empty strings independent of filename and SHALL NOT be restricted to a hardcoded bundled-name list. The registered definitions SHALL be the source of truth for available names. The bundled prompt bodies and tool lists SHALL be sourced from the maintainer's LLW Multiverse bundle, with the accidental trailing `` `;`` excluded from the Visualizer source, and their initial skill lists SHALL be empty. Only enabled, successfully parsed and registered definitions SHALL be accepted as new child targets, whether bundled or user-supplied. Conflicting definitions claiming the same agent name SHALL produce a registration diagnostic rather than silently overwrite one another.
 
-#### Scenario: Child is recognized after enabled reopen
-- **WHEN** Pi opens a persisted session with a valid child identity while Multiverse is enabled
-- **THEN** Multiverse classifies it as the named subagent rather than a parent
+#### Scenario: Enabled roster
+- **WHEN** all three bundled definitions are enabled and valid and the user agents directories contribute no definitions
+- **THEN** `explorer`, `fixer`, and `visualizer` are the complete set of new-child targets
 
-#### Scenario: Invalid identity is rejected while enabled
-- **WHEN** Multiverse is enabled and a session contains conflicting markers, an unsupported marker version, or an empty subagent name
-- **THEN** child activation fails with a diagnostic rather than silently choosing an identity
+#### Scenario: Roster includes user-supplied agents
+- **WHEN** the bundled definitions are enabled and a user-supplied definition discovered in a user agents directory registers under a new name
+- **THEN** the new-child targets are the enabled bundled agents together with that user-supplied agent
 
-#### Scenario: Disabled reopen is ordinary Pi
-- **WHEN** a persisted child is opened directly while Multiverse is disabled
-- **THEN** Multiverse applies neither a child prompt nor child tool restrictions, and the identity remains stored for future enabled activation
+#### Scenario: No definition available
+- **WHEN** no bundled or user-supplied definition is enabled and valid
+- **THEN** no new-child target is offered and the user is informed
+
+#### Scenario: Registered non-bundled name
+- **WHEN** a valid definition declares a new name not in the initial shipped roster
+- **THEN** it is registered under that name regardless of filename and can be activated or spawned when enabled
+
+#### Scenario: Unregistered child name
+- **WHEN** an enabled child identity names an agent absent from the registry
+- **THEN** activation reports that the definition is unavailable rather than treating a hardcoded enum as authoritative
+
+#### Scenario: Conflicting registrations
+- **WHEN** separate definition files claim the same agent name
+- **THEN** the conflict is reported rather than silently replacing an existing registration
 
 ### Requirement: Definitions are rolling across activations
 Child identity SHALL persist only which subagent the session is, not historical definition contents. An extension instance SHALL load its definitions once and reuse them for its activation, turns, and spawn lookups. This SHALL apply equally to bundled and user-supplied definitions. Reloading or reopening with Multiverse enabled SHALL adopt the currently installed definition and the current contents of the user agents directories. Editing or adding a definition file on disk SHALL NOT hot-update an already active instance on its next turn or spawn lookup.
@@ -187,36 +138,3 @@ Child identity SHALL persist only which subagent the session is, not historical 
 #### Scenario: Child of a removed user definition
 - **WHEN** a persisted child names a user-supplied agent whose file has since been deleted from a user agents directory
 - **THEN** activation fails clearly with the agent identified and the session is preserved
-
-### Requirement: Enabled child prompt fully replaces the host prompt
-While Multiverse is enabled, the resolved child prompt SHALL fully replace the host base prompt. Default host instructions, project or user appended prompt files, command-line appended prompt content, and Megamind parent content SHALL NOT be included. Other loaded extensions MAY contribute prompt changes after the replacement.
-
-#### Scenario: Host content is removed
-- **WHEN** an enabled child runs with ambient host and appended prompts
-- **THEN** its base system prompt consists of its resolved subagent body without that host content
-
-#### Scenario: Parent persona is excluded
-- **WHEN** an enabled session is classified as a child
-- **THEN** parent persona selection does not affect its base prompt
-
-### Requirement: Enabled child tools use declared registered tools
-On enabled child activation, the system SHALL set active tools to the registered subset of the resolved definition's tools. Undeclared tools, including Multiverse orchestration tools, SHALL be inactive. V1 SHALL rely on active-tool selection without a second tool-call enforcement gate; later changes by other extensions are outside this guarantee.
-
-#### Scenario: Undeclared tool is inactive
-- **WHEN** a child definition omits a registered tool
-- **THEN** enabled activation removes that tool from the child's active set
-
-#### Scenario: Reopen reapplies tools
-- **WHEN** a child is reopened with Multiverse enabled
-- **THEN** its active tools are reset to the registered subset of its newly loaded definition
-
-### Requirement: V1 skill scope
-V1 bundled definitions SHALL declare no skills, and SDK-created children SHALL receive no ambient skills through their resource loader. Skill names SHALL remain parseable and deduplicated, but V1 SHALL NOT require skill resolution, missing-skill diagnostics, or interception of undeclared skill commands in directly reopened sessions.
-
-#### Scenario: Bundled child has no loaded skills
-- **WHEN** an SDK child is created from a bundled V1 definition
-- **THEN** its resource loader exposes no ambient skills
-
-#### Scenario: Skill commands are not a V1 enforcement surface
-- **WHEN** a directly reopened child receives a skill command
-- **THEN** V1 provides no Multiverse skill-command interception guarantee

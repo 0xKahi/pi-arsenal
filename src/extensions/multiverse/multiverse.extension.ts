@@ -3,11 +3,12 @@ import type { ConfigProvider } from '../../config/config-loader.ts';
 import type { ModelConfig, ReasoningLevel } from '../../schemas/shared-config.schema.ts';
 import { DebugLoggerUtil } from '../../utils/debug-logger.util.ts';
 import { emitSetAgentNameEvent } from '../../utils/emit-set-agentName-event.util.ts';
+import { PathUtil } from '../../utils/path.util.ts';
 import { PiToolManager } from '../../utils/pi-tool-manager.util.ts';
 import { SessionRoleState } from './agents/session-role-state.ts';
 import type { SubagentDefinition } from './agents/subagent-definition.ts';
 import { type PresetSelection, SubAgentModelResolver } from './agents/subagent-model-resolver.ts';
-import { discoverSubagentPaths, SUBAGENT_PROMPTS_DIRECTORY } from './agents/subagent-paths.ts';
+import { discoverOrderedSubagentPaths, SUBAGENT_PROMPTS_DIRECTORY } from './agents/subagent-paths.ts';
 import { SubAgentRegistry } from './agents/subagent-registry.ts';
 import { AGENT_COLORS, COMMAND_NAME, MULTIVERSE_DEBUG, PI_VIM_KEY_EVENT_ID } from './constants.ts';
 import { openMultiverseModal } from './modal/open-multiverse-modal.ts';
@@ -24,6 +25,8 @@ export interface MultiverseDependencies {
   roleState?: SessionRoleState;
   parentAgentState?: ParentAgentState;
   definitionsDirectory?: string;
+  projectAgentsDirectory?: string;
+  globalAgentsDirectory?: string;
   repository?: ChildSessionRepository;
   spawnRun?: typeof runSpawn;
 }
@@ -37,7 +40,6 @@ interface MultiverseRuntime {
   roleState: SessionRoleState;
   parentAgentState: ParentAgentState;
   subAgents: SubAgentRegistry;
-  definitionErrors: readonly string[];
   modelResolver: SubAgentModelResolver;
   registeredSubAgentSession?: SubagentDefinition;
 }
@@ -48,11 +50,11 @@ export function registerMultiverse(pi: ExtensionAPI, dependencies: MultiverseDep
   const repository = dependencies.repository ?? new ChildSessionRepository();
   const admission = new ChildAdmissionRegistry();
   const subAgents = new SubAgentRegistry();
-  const discovered = discoverSubagentPaths(dependencies.definitionsDirectory ?? SUBAGENT_PROMPTS_DIRECTORY);
-  const definitionErrors = [...discovered.errors, ...subAgents.register(discovered.paths)];
   // Selection is deliberately extension-local: session starts reset it and switches never append entries.
   const modelResolver = new SubAgentModelResolver(dependencies.config.getMultiverse());
-  const runtime: MultiverseRuntime = { roleState, parentAgentState, subAgents, definitionErrors, modelResolver };
+  // Discovery and registration are deferred to activation so the project agents directory and trust
+  // status can resolve against the session's working directory, which does not exist at factory load.
+  const runtime: MultiverseRuntime = { roleState, parentAgentState, subAgents, modelResolver };
 
   pi.registerTool(
     createSpawnTool({
@@ -110,11 +112,24 @@ export function registerMultiverse(pi: ExtensionAPI, dependencies: MultiverseDep
 
 /** Install enabled-only command, key-event, prompt, and activation behavior. */
 function activateMultiverse(pi: ExtensionAPI, dependencies: MultiverseDependencies, runtime: MultiverseRuntime, initialCtx: ExtensionContext): void {
-  const { roleState, parentAgentState, subAgents, definitionErrors } = runtime;
+  const { roleState, parentAgentState, subAgents } = runtime;
   let latestCtx = initialCtx;
 
   //--- Internal Session Logic START ---
   const config = dependencies.config.getMultiverse();
+  // Registration order is what encodes precedence: the registry's first-registration-wins dedupe
+  // makes a bundled definition beat a project file, which in turn beats a global file.
+  // isProjectTrusted() is advisory to extensions rather than an enforced filesystem sandbox, and
+  // discovery runs outside ConfigLoader, so the extension must apply the project trust gate itself.
+  const trusted = initialCtx.isProjectTrusted();
+  const discovered = discoverOrderedSubagentPaths({
+    bundledDirectory: dependencies.definitionsDirectory ?? SUBAGENT_PROMPTS_DIRECTORY,
+    projectDirectory: trusted
+      ? (dependencies.projectAgentsDirectory ?? PathUtil.getAgentsDirectory({ type: 'project', cwd: initialCtx.cwd }))
+      : undefined,
+    globalDirectory: dependencies.globalAgentsDirectory ?? PathUtil.getAgentsDirectory({ type: 'global' }),
+  });
+  const definitionErrors = [...discovered.errors, ...subAgents.register(discovered.paths).map(failure => failure.message)];
   subAgents.resolveAvailability(config);
   for (const error of definitionErrors) initialCtx.ui.notify(`pi-arsenal: ${error}`, 'error');
   const roster = subAgents.availableSubAgents;

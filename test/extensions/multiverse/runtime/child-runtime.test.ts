@@ -98,6 +98,22 @@ describe('ChildRuntime.resolveModel', () => {
     expect(result).toMatchObject({ success: true, model: configured });
   });
 
+  it('inherits provider and modelId from the parent when a user agent settings model supplies only reasoning, clamping that reasoning', async () => {
+    const parent = {
+      ...model('parent-provider', 'parent-model'),
+      reasoning: true,
+      thinkingLevelMap: { high: null, xhigh: null, max: null },
+    } as Model<Api>;
+    const result = await ChildRuntime.resolveModel({
+      configured: { reasoning: 'max' },
+      parentModel: parent,
+      registry: registry([parent], { 'parent-provider/parent-model': { ok: true, apiKey: 'parent' } }),
+    });
+
+    expect(result).toMatchObject({ success: true, model: parent });
+    if (result.success) expect(ChildRuntime.resolveReasoning(result.model, 'max', undefined)).toBe('medium');
+  });
+
   it('returns accumulated reasons when no candidate works', async () => {
     const parent = model('parent', 'broken');
     const result = await ChildRuntime.resolveModel({

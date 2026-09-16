@@ -57,6 +57,17 @@ export class PathUtil {
     }
   }
 
+  static getAgentsDirectory(input: FindConfigInput): string {
+    switch (input.type) {
+      case 'global': {
+        return PathUtil.getExtensionAgentsDir([getAgentDir()]);
+      }
+      case 'project': {
+        return PathUtil.getExtensionAgentsDir([input.cwd, '.pi']);
+      }
+    }
+  }
+
   static findArsenalConfig(input: FindArsenalConfigInput): FileSearchResult {
     switch (input.type) {
       case 'global': {
@@ -99,5 +110,9 @@ export class PathUtil {
 
   private static getExtensionConfig(paths: string[]): string {
     return path.join(...paths, 'extensions', EXTENSION_ID, 'config.json');
+  }
+
+  private static getExtensionAgentsDir(paths: string[]): string {
+    return path.join(...paths, 'extensions', EXTENSION_ID, 'agents');
   }
 }

@@ -133,3 +133,99 @@ The `fileCommand` prefix is loaded from your trusted global or trusted project c
 ### Behavior
 
 The tool spawns `tmux display-popup -E` as a detached process and returns as soon as tmux starts. It does not wait for the editor to exit, so the popup remains open while the agent continues.
+
+---
+
+## `multiverse` — user-defined subagents
+
+Register your own subagent definitions alongside the bundled `explorer`, `fixer`, and `visualizer`. A user-defined agent is a subagent definition markdown file that you own; once discovered, it is offered to the parent and spawned exactly like a bundled one.
+
+This section documents only how definitions are discovered and configured. Other Multiverse features (presets, concurrency, personas, the spawn tool, child sessions) are out of scope here.
+
+### Definition locations
+
+Definitions are discovered from two conventional directories in addition to the bundled ones:
+
+- global: `<agent-dir>/extensions/pi-arsenal/agents/`
+- project: `<cwd>/.pi/extensions/pi-arsenal/agents/`
+
+Each directory is scanned for `.md` files sorted alphabetically. Neither directory needs to exist: an absent directory is simply empty and produces no warning. The project directory is read only when the project is trusted; the global directory is always read.
+
+### Definition file format
+
+A user agent file uses the same format as the bundled definitions: YAML frontmatter followed by a non-empty prompt body.
+
+```markdown
+---
+name: reviewer
+tools:
+  - read
+  - grep
+  - bash
+skills: []
+color: "#7FDB9E"
+metadata:
+  - "Lane: Review a change for correctness and style"
+  - "**Delegate when:** A change is ready for a focused second pass"
+  - "**Don't delegate when:** You need the change written, not reviewed"
+---
+You are Reviewer - a focused code review specialist.
+
+**Role**: Inspect a change and report concrete, actionable findings.
+
+Guidelines:
+- Read the relevant files before commenting.
+- Prefer specific issues over general advice.
+- Return findings with file paths and line numbers.
+```
+
+- `name` (`string`, required) — the registered agent name. The name always comes from the frontmatter; the filename is decorative and is neither parsed nor required to match. Must be non-empty and must not collide with a bundled agent.
+- `tools` (array of strings) — the tool subset this agent may use.
+- `skills` (array of strings) — skills granted to the agent.
+- `metadata` (non-empty array of strings, required) — parent-facing routing guidance describing when to delegate.
+- `color` (`#RRGGBB`, optional) — display color.
+- The prompt body after the frontmatter must be non-empty.
+
+### Precedence
+
+Definitions register in a fixed order: bundled first, then project, then global, with files alphabetical within each directory. The first claim on a name wins, so:
+
+- A bundled agent always wins a name conflict; a user definition can never replace, shadow, or retune `explorer`, `fixer`, or `visualizer`. Pick a different `name`.
+- A project definition wins over a global definition declaring the same name.
+
+A losing file is skipped and the conflict is reported, naming the winning agent and the skipped file.
+
+### Trust
+
+The project directory is read only when project trust is active. In an untrusted project, only bundled and global definitions register.
+
+### Configuration
+
+User agent settings use the same name-keyed `subagents` map as bundled agents. There is no per-definition configuration; a user agent's model is set with `subagents["<name>"].model`:
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/0xKahi/pi-arsenal/main/assets/config.schema.json",
+  "multiverse": {
+    "enabled": true,
+    "subagents": {
+      "reviewer": {
+        "enabled": true,
+        "model": { "provider": "anthropic", "modelId": "claude-sonnet-4", "reasoning": "high" }
+      }
+    }
+  }
+}
+```
+
+A registered user agent is governed by `subagents["<name>"].enabled`, so you can turn it off without deleting its file. Omitted `model` fields fall back to the active preset and then to the parent session's model, exactly as for a bundled agent.
+
+### Failure behavior
+
+An unreadable directory is reported once. An unreadable file, an invalid definition, or a name conflict skips only that file with a warning. Multiverse stays enabled and every other agent remains available. Problems are reported once when the extension activates.
+
+### Limitation
+
+Definitions load once per activation. Adding or editing a user agent's markdown takes effect only after a reload or reopen; there is no hot-reload.
+
+> 📖 **[Full Multiverse documentation →](docs/multiverse.md)** — configuration reference, model presets, durable children, the spawn tool, the `/multiverse` command, and V1 limitations.

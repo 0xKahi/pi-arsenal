@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { type ExtensionAPI, type ExtensionContext, SessionManager } from '@earendil-works/pi-coding-agent';
 import type { ConfigProvider } from '../../../../src/config/config-loader.ts';
+import { SubagentIdentityHandler } from '../../../../src/extensions/multiverse/agents/session-identity.ts';
 import { registerMultiverse } from '../../../../src/extensions/multiverse/multiverse.extension.ts';
 import { ChildRuntime } from '../../../../src/extensions/multiverse/runtime/child-runtime.ts';
 import { ChildSessionRepository } from '../../../../src/extensions/multiverse/runtime/child-session-repository.ts';
@@ -62,8 +63,11 @@ describe('Multiverse activation against real session files', () => {
 
   beforeEach(() => writeFileSync(definitionFile, definitionSource('ORIGINAL CHILD PROMPT')));
 
-  const harness = (options: { sessionManager: SessionManager; enabled?: boolean }) => {
-    const config = MultiverseConfigSchema.parse({ enabled: options.enabled ?? true, defaultAgent: 'megamind' });
+  const harness = (options: { sessionManager: SessionManager; enabled?: boolean; globalAgentsDirectory?: string }) => {
+    const config = MultiverseConfigSchema.parse({
+      enabled: options.enabled ?? true,
+      defaultAgent: 'megamind',
+    });
     let activeTools = [...HOST_TOOLS];
     const notifications: string[] = [];
     const handlers = new Map<string, (event: never, ctx: ExtensionContext) => unknown>();
@@ -88,12 +92,14 @@ describe('Multiverse activation against real session files', () => {
       thinkingLevel: 'off',
       modelRegistry: {},
       sessionManager: options.sessionManager,
+      isProjectTrusted: () => true,
       ui: { notify: (message: string) => notifications.push(message) },
     } as unknown as ExtensionContext;
 
     const activation = registerMultiverse(pi, {
       config: { getMultiverse: () => config } as ConfigProvider,
       definitionsDirectory,
+      globalAgentsDirectory: options.globalAgentsDirectory,
       repository: new ChildSessionRepository({ root }),
     });
 
@@ -176,5 +182,54 @@ describe('Multiverse activation against real session files', () => {
     expect(harnessed.activation.roleState.get().kind).toBe('child');
     // Pi filters the unregistered name itself; the agent stays usable.
     expect(harnessed.tools()).toEqual(['read']);
+  });
+
+  it('builds a child for a user-defined agent and fails clearly once its file is removed', async () => {
+    const userAgentsDirectory = mkdtempSync(path.join(tmpdir(), 'arsenal-user-'));
+    const reviewerFile = path.join(userAgentsDirectory, 'reviewer.md');
+    writeFileSync(reviewerFile, `---\nname: reviewer\ntools: [read]\nskills: []\nmetadata: ["Lane: review"]\n---\nREVIEWER CHILD PROMPT`);
+    try {
+      // Materialize a genuine durable child of the user-defined agent.
+      server.script({ text: 'reviewer reply' });
+      const handle = new ChildSessionRepository({ root }).create(cwd, 'parent-personal', 'reviewer');
+      await new ChildRuntime({ agentDir: server.agentDir }).run({
+        cwd,
+        definition: {
+          name: 'reviewer',
+          tools: ['read'],
+          skills: [],
+          metadata: ['Lane: review'],
+          prompt: 'REVIEWER CHILD PROMPT',
+          filePath: reviewerFile,
+        },
+        sessionManager: handle.sessionManager,
+        model: server.model,
+        thinkingLevel: 'off',
+        prompt: 'seed',
+        checkpoint: null,
+      });
+
+      const opened = harness({ sessionManager: SessionManager.open(handle.sessionFile), globalAgentsDirectory: userAgentsDirectory });
+      opened.start();
+
+      expect(opened.activation.roleState.get().kind).toBe('child');
+      // Only the definition's declared tools survive, exactly as for a bundled child.
+      expect(opened.tools()).toEqual(['read']);
+      expect(opened.turn()?.systemPrompt).toBe('REVIEWER CHILD PROMPT');
+
+      // The durable identity marker names the user-defined agent.
+      const identity = SubagentIdentityHandler.parse(SessionManager.open(handle.sessionFile).getEntries());
+      expect(identity).toMatchObject({ kind: 'child', identity: { agent: 'reviewer', parentSessionId: 'parent-personal' } });
+
+      // Removing the file preserves the session but yields a clear, agent-named failure.
+      const removed = harness({ sessionManager: SessionManager.open(handle.sessionFile) });
+      removed.start();
+      expect(removed.activation.roleState.get().kind).toBe('child');
+      expect(removed.notifications.join('\n')).toContain('reviewer');
+      expect(removed.notifications.join('\n')).toContain('not registered');
+      expect(() => new ChildSessionRepository({ root }).open(cwd, 'parent-personal', handle.sessionId)).not.toThrow();
+    } finally {
+      rmSync(userAgentsDirectory, { recursive: true, force: true });
+    }
   });
 });

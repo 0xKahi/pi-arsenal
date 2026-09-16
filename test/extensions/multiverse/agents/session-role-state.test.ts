@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { tmpdir } from 'node:os';
 import type { ExtensionAPI, ExtensionContext, SessionEntry } from '@earendil-works/pi-coding-agent';
 import type { ConfigProvider } from '../../../../src/config/config-loader.ts';
 import { SUBAGENT_IDENTITY_CUSTOM_TYPE, SubagentIdentityHandler } from '../../../../src/extensions/multiverse/agents/session-identity.ts';
@@ -55,6 +56,8 @@ const setup = () => {
 const context = (entries: SessionEntry[], notifications: string[] = []): ExtensionContext =>
   ({
     sessionManager: { getEntries: () => entries },
+    cwd: tmpdir(),
+    isProjectTrusted: () => true,
     ui: { notify: (message: string) => notifications.push(message) },
   }) as unknown as ExtensionContext;
 

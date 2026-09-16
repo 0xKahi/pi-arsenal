@@ -44,3 +44,14 @@ describe('Multiverse preset configuration schema', () => {
     expect(() => MultiverseConfigPartialSchema.parse(value)).toThrow();
   });
 });
+
+describe('Multiverse retired personal_agents configuration', () => {
+  it('rejects a personal_agents key as an unrecognized field', () => {
+    const partial = MultiverseConfigPartialSchema.safeParse({ personal_agents: [{ file: 'reviewer.md' }] });
+
+    expect(partial.success).toBe(false);
+    if (!partial.success) expect(partial.error.message).toContain('personal_agents');
+
+    expect(() => MultiverseConfigSchema.parse({ personal_agents: [] })).toThrow();
+  });
+});

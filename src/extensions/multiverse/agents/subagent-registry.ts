@@ -1,25 +1,34 @@
 import type { MultiverseConfig } from '../../../schemas/multiverse.config.schema.ts';
 import { loadSubagentDefinition, type SubagentDefinition } from './subagent-definition.ts';
 
+/** A path that produced no registration, reported as facts so callers can phrase them for the user. */
+export interface RegistrationFailure {
+  filePath: string;
+  message: string;
+}
+
 export class SubAgentRegistry {
   private readonly subAgents = new Map<string, SubagentDefinition>();
   private readonly availability = new Map<string, boolean>();
   private readonly registeredPaths = new Set<string>();
 
   /** Each path is read once per registry. A conflicting name never overwrites its first registration. */
-  register(paths: readonly string[]): string[] {
-    const errors: string[] = [];
+  register(paths: readonly string[]): RegistrationFailure[] {
+    const errors: RegistrationFailure[] = [];
     for (const filePath of paths) {
       if (this.registeredPaths.has(filePath)) continue;
       this.registeredPaths.add(filePath);
       const result = loadSubagentDefinition(filePath);
       if (result.status === 'error') {
-        errors.push(result.error);
+        errors.push({ filePath, message: result.error });
         continue;
       }
       const existing = this.subAgents.get(result.data.name);
       if (existing) {
-        errors.push(`${filePath}: duplicate subagent "${result.data.name}" already registered from ${existing.filePath}.`);
+        errors.push({
+          filePath,
+          message: `duplicate subagent "${result.data.name}": keeping ${existing.filePath}; skipping ${filePath}.`,
+        });
         continue;
       }
       this.subAgents.set(result.data.name, result.data);
