@@ -1,5 +1,11 @@
 # @0xkahi/pi-arsenal
 
+## 0.3.4
+
+### Patch Changes
+
+- 9ba0727: added user defined subagents
+
 ## 0.3.3
 
 ### Patch Changes
