@@ -65,4 +65,29 @@ describe('SubAgentModelResolver', () => {
     resolver.reset(config({ defaultPreset: 'missing', presets: {} }));
     expect(resolver.currentSelection()).toEqual({ kind: 'baseline' });
   });
+
+  it('refreshes the settings model a discovered user agent resolves from', () => {
+    const resolver = new SubAgentModelResolver(
+      config({ subagents: { explorer: { enabled: true, model: { provider: 'user-provider', modelId: 'user-model', reasoning: 'high' } } } }),
+    );
+    expect(resolver.resolveModel('explorer')).toEqual({ provider: 'user-provider', modelId: 'user-model', reasoning: 'high' });
+    resolver.updateConfig(
+      config({ subagents: { explorer: { enabled: true, model: { provider: 'next-provider', modelId: 'next-model', reasoning: 'low' } } } }),
+    );
+    expect(resolver.resolveModel('explorer')).toEqual({ provider: 'next-provider', modelId: 'next-model', reasoning: 'low' });
+  });
+
+  it('lets an active preset override a discovered user agent settings model field by field', () => {
+    const resolver = new SubAgentModelResolver(
+      config({
+        presets: { smart: { explorer: { provider: 'preset-provider', reasoning: 'max' } } },
+        subagents: { explorer: { enabled: true, model: { provider: 'user-provider', modelId: 'user-model', reasoning: 'medium' } } },
+      }),
+    );
+    expect(resolver.resolveModel('explorer', { kind: 'named', name: 'smart' })).toEqual({
+      provider: 'preset-provider',
+      modelId: 'user-model',
+      reasoning: 'max',
+    });
+  });
 });

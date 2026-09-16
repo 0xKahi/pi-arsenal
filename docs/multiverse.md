@@ -1,6 +1,6 @@
 # Multiverse
 
-Multiverse adds durable parent-owned subagents, initially shipping `explorer`, `fixer`, and `visualizer`. Markdown files in `src/extensions/multiverse/agents/subagent-prompts/` are discovered and parsed once per extension instance. The registry uses each definition's declared string name, independent of filename; no bundled-name enum limits registration. Definitions intentionally roll forward on reload/reopen, not on each turn or spawn lookup.
+Multiverse adds durable parent-owned subagents, initially shipping `explorer`, `fixer`, and `visualizer`, and additionally discovers user-supplied definitions from two conventional directories. The registry uses each definition's declared string name, independent of filename; no bundled-name enum limits registration. Definitions load once per activation and roll forward on reload/reopen, not on each turn or spawn lookup.
 
 ## Configuration
 
@@ -36,6 +36,77 @@ Multiverse adds durable parent-owned subagents, initially shipping `explorer`, `
 - `defaultPreset`: optional name of the preset each session starts on. A name that matches no preset is not an error; the session simply starts on the built-in default.
 - `presets`: optional map of preset name -> agent name -> partial model settings (`provider`, `modelId`, `reasoning`). Every field is optional, empty presets and empty agent entries are valid, and presets never register or enable an agent.
 - Nested global and trusted-project settings merge by name; invalid Multiverse settings disable only that feature.
+
+## User-defined agents
+
+Place definition files in one of two conventional directories to extend the roster:
+
+- **global:** `<agent-dir>/extensions/pi-arsenal/agents/` — always scanned.
+- **project:** `<cwd>/.pi/extensions/pi-arsenal/agents/` — scanned only when the project is trusted.
+
+Each directory is scanned for `.md` files, sorted alphabetically. An absent directory is silently skipped. A registered user agent is indistinguishable from a bundled one: it appears in the parent roster, accepts spawn, and runs under the same child prompt and tool policy.
+
+### Definition format
+
+A definition is a markdown file with YAML frontmatter followed by a non-empty prompt body:
+
+````markdown
+---
+name: reviewer
+tools:
+  - read
+  - grep
+  - bash
+skills: []
+color: "#7FDB9E"
+metadata:
+  - "Lane: Review a change for correctness and style"
+  - "**Delegate when:** A change is ready for a focused second pass"
+  - "**Don't delegate when:** You need the change written, not reviewed"
+---
+You are Reviewer — a focused code review specialist.
+
+**Role**: Inspect a change and report concrete, actionable findings.
+
+Guidelines:
+- Read the relevant files before commenting.
+- Prefer specific issues over general advice.
+- Return findings with file paths and line numbers.
+````
+
+Required frontmatter fields: `name` (non-empty string), `tools` (array), `skills` (array), `metadata` (non-empty array). Optional: `color` (`#RRGGBB`). The filename is decorative and never required to match `name`.
+
+### Precedence
+
+Definitions register in the order bundled → project → global, alphabetical within each directory. The first registration wins:
+
+- A bundled agent (`explorer`, `fixer`, `visualizer`) always beats a user definition of the same name. Choose a different `name`.
+- A project definition beats a global definition of the same name.
+
+A losing file is skipped and the conflict is reported, naming both the winning agent and the skipped file.
+
+### Model and availability
+
+A user agent's model is set through the same `subagents` map as bundled agents:
+
+```json
+"subagents": {
+  "reviewer": {
+    "enabled": true,
+    "model": { "provider": "anthropic", "modelId": "claude-sonnet-4", "reasoning": "high" }
+  }
+}
+```
+
+Omitted fields inherit from the active preset and then the parent session model. `subagents["<name>"].enabled` disables a user agent without removing its file.
+
+### Failure handling
+
+A file that cannot be read, fails frontmatter validation, or loses a name conflict is skipped individually — Multiverse stays enabled and every other agent remains available. An unreadable directory is reported once at activation. Problems are not repeated per turn or per spawn call.
+
+### Limitation
+
+Definitions load once per activation. Editing or adding a file takes effect only after a reload or reopen; there is no hot-reload.
 
 ## Model presets
 

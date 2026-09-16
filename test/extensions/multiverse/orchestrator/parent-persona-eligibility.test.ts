@@ -42,11 +42,16 @@ const setup = (enabled: boolean, enabledRoster = true) => {
   };
   const notifications: string[] = [];
   const ctx = {
+    isProjectTrusted: () => false,
+    cwd: '/tmp/project',
     sessionManager: { getEntries: () => [megamindEntry] },
     ui: { notify: (message: string) => notifications.push(message) },
   } as unknown as ExtensionContext;
   const activation = registerMultiverse(pi, {
     config,
+    // Point discovery at absent directories so a developer's real agents folder cannot reach this test.
+    projectAgentsDirectory: '/tmp/pi-arsenal-absent-project-agents',
+    globalAgentsDirectory: '/tmp/pi-arsenal-absent-global-agents',
   });
   const start = () => handlers.get('session_start')?.[0]?.({ type: 'session_start', reason: 'startup' } as never, ctx);
   const beforeAgentStart = (systemPrompt: string) =>

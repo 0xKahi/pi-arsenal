@@ -46,6 +46,7 @@ const setup = (initialEntries: SessionEntry[] = [], persona: 'default' | 'megami
   const notifications: string[] = [];
   const ctx = {
     isIdle: () => true,
+    isProjectTrusted: () => false,
     cwd: '/tmp/project',
     model: { provider: 'anthropic', id: 'model' },
     modelRegistry: {},
@@ -55,6 +56,9 @@ const setup = (initialEntries: SessionEntry[] = [], persona: 'default' | 'megami
 
   const activation = registerMultiverse(pi, {
     config,
+    // Point discovery at absent directories so a developer's real agents folder cannot reach this test.
+    projectAgentsDirectory: '/tmp/pi-arsenal-absent-project-agents',
+    globalAgentsDirectory: '/tmp/pi-arsenal-absent-global-agents',
     // Only manifest/activation wiring is under test; no child is really dispatched.
     spawnRun: async () => ({ interactions: [childInteraction({ body: 'child output' })], progress: new SpawnProgress([]), aborted: false }),
   });

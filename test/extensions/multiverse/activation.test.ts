@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { ExtensionAPI, ExtensionContext, SessionEntry } from '@earendil-works/pi-coding-agent';
@@ -13,6 +13,9 @@ import { childInteraction } from './interaction-fixture.ts';
 
 const source = (prompt: string) =>
   `---\nname: researcher\ntools: [read, missing, read]\nskills: [unknown]\nmetadata: ["Research lane"]\n---\n${prompt}`;
+const userSource = (name: string, prompt: string, tools = '[read]', skills = '[]', metadata = '["user"]') =>
+  `---\nname: ${name}\ntools: ${tools}\nskills: ${skills}\nmetadata: ${metadata}\n---\n${prompt}`;
+const rosterNames = (prompt: string | undefined): string[] => (prompt ?? '').split('\n').filter(line => line.startsWith('@'));
 const identity = (agent = 'researcher', version = 1): SessionEntry => ({
   type: 'custom',
   id: 'identity',
@@ -40,13 +43,26 @@ const reference = (): SessionEntry =>
 
 describe('Multiverse activation lifecycle', () => {
   let directory: string;
+  let globalDirectory: string;
+  let projectDirectory: string;
   beforeEach(() => {
     directory = mkdtempSync(path.join(tmpdir(), 'arsenal-activation-'));
+    globalDirectory = mkdtempSync(path.join(tmpdir(), 'arsenal-global-'));
+    projectDirectory = mkdtempSync(path.join(tmpdir(), 'arsenal-project-'));
     writeFileSync(path.join(directory, 'different-name.md'), source('original child prompt'));
   });
-  afterEach(() => rmSync(directory, { recursive: true, force: true }));
+  afterEach(() => {
+    rmSync(directory, { recursive: true, force: true });
+    rmSync(globalDirectory, { recursive: true, force: true });
+    rmSync(projectDirectory, { recursive: true, force: true });
+  });
 
-  const setup = (entries: SessionEntry[] = [], enabled = true, defaultAgent: 'default' | 'megamind' = 'megamind') => {
+  const setup = (
+    entries: SessionEntry[] = [],
+    enabled = true,
+    defaultAgent: 'default' | 'megamind' = 'megamind',
+    options: { trusted?: boolean; projectAgentsDirectory?: string; globalAgentsDirectory?: string } = {},
+  ) => {
     let config = MultiverseConfigSchema.parse({ enabled, defaultAgent });
     let active = ['read', 'external', 'spawn'];
     let branch: SessionEntry[] = [];
@@ -91,6 +107,7 @@ describe('Multiverse activation lifecycle', () => {
       model: { provider: 'one', id: 'model' },
       thinkingLevel: 'low',
       modelRegistry: {},
+      isProjectTrusted: () => options.trusted ?? true,
       sessionManager: { getEntries: () => entries, getBranch: () => branch, getSessionId: () => 'parent' },
       ui: {
         notify: (message: string) => notifications.push(message),
@@ -103,6 +120,9 @@ describe('Multiverse activation lifecycle', () => {
     const activation = registerMultiverse(pi, {
       config: { getMultiverse: () => config } as ConfigProvider,
       definitionsDirectory: directory,
+      // Inject absent paths by default so the real global/project directories never leak into a test.
+      projectAgentsDirectory: options.projectAgentsDirectory ?? path.join(directory, 'no-project-agents'),
+      globalAgentsDirectory: options.globalAgentsDirectory ?? path.join(directory, 'no-global-agents'),
       spawnRun: async (_input, execution) => {
         executions.push(execution);
         return { interactions: [], progress: new SpawnProgress([]), aborted: false };
@@ -369,5 +389,100 @@ describe('Multiverse activation lifecycle', () => {
     runtime.start();
     runtime.setConfig(MultiverseConfigSchema.parse({ enabled: false }));
     await expect(runtime.spawn()).rejects.toThrow('eligible Megamind parent');
+  });
+
+  it('registers a definition discovered in the global agents directory', async () => {
+    writeFileSync(path.join(globalDirectory, 'reviewer.md'), userSource('reviewer', 'GLOBAL REVIEWER PROMPT'));
+    const runtime = setup([], true, 'megamind', { globalAgentsDirectory: globalDirectory });
+    runtime.start();
+
+    expect(rosterNames(runtime.turn()?.systemPrompt)).toContain('@reviewer');
+    await runtime.spawn('reviewer');
+    expect(runtime.executions[0]?.getSubAgent('reviewer')?.agent.prompt).toBe('GLOBAL REVIEWER PROMPT');
+  });
+
+  it('registers a project definition only when the project is trusted', () => {
+    writeFileSync(path.join(projectDirectory, 'projector.md'), userSource('projector', 'PROJECT PROMPT'));
+
+    const trusted = setup([], true, 'megamind', { trusted: true, projectAgentsDirectory: projectDirectory });
+    trusted.start();
+    expect(rosterNames(trusted.turn()?.systemPrompt)).toContain('@projector');
+
+    const untrusted = setup([], true, 'megamind', { trusted: false, projectAgentsDirectory: projectDirectory });
+    untrusted.start();
+    expect(rosterNames(untrusted.turn()?.systemPrompt)).not.toContain('@projector');
+  });
+
+  it('registers global agents while an untrusted project contributes nothing', () => {
+    writeFileSync(path.join(globalDirectory, 'reviewer.md'), userSource('reviewer', 'GLOBAL PROMPT'));
+    writeFileSync(path.join(projectDirectory, 'projector.md'), userSource('projector', 'PROJECT PROMPT'));
+    const runtime = setup([], true, 'megamind', {
+      trusted: false,
+      projectAgentsDirectory: projectDirectory,
+      globalAgentsDirectory: globalDirectory,
+    });
+    runtime.start();
+
+    const names = rosterNames(runtime.turn()?.systemPrompt);
+    expect(names).toContain('@reviewer');
+    expect(names).not.toContain('@projector');
+  });
+
+  it('registers exactly the bundled roster with no warning when both user directories are absent', () => {
+    const runtime = setup();
+    runtime.start();
+    expect(rosterNames(runtime.turn()?.systemPrompt)).toEqual(['@researcher']);
+    // The only diagnostic is the bundled definition's unknown tool; absent directories stay silent.
+    expect(runtime.notifications.join('\n')).not.toContain('unable to discover');
+  });
+
+  it('reports a discovery problem once and never repeats it per turn or spawn call', async () => {
+    writeFileSync(path.join(globalDirectory, 'broken.md'), 'not a definition');
+    const runtime = setup([], true, 'megamind', { globalAgentsDirectory: globalDirectory });
+    runtime.start();
+    const problems = () => runtime.notifications.filter(message => message.includes('broken.md'));
+    expect(problems()).toHaveLength(1);
+
+    runtime.turn();
+    runtime.turn();
+    await runtime.spawn('researcher');
+    // A later session_start reuses the already-activated instance and must not re-report either.
+    runtime.start();
+    runtime.turn();
+    expect(problems()).toHaveLength(1);
+  });
+
+  it('offers a registered global agent to the parent roster and to spawn validation', async () => {
+    writeFileSync(
+      path.join(globalDirectory, 'reviewer.md'),
+      userSource('reviewer', 'REVIEWER PROMPT', '[read, external]', '[review]', '["Lane: review", "Reviews diffs"]'),
+    );
+    const runtime = setup([], true, 'megamind', { globalAgentsDirectory: globalDirectory });
+    runtime.start();
+
+    const prompt = runtime.turn()?.systemPrompt ?? '';
+    expect(prompt).toContain('@reviewer');
+    expect(prompt).toContain('Lane: review');
+    expect(prompt).toContain('Reviews diffs');
+    expect(prompt).toContain('- Tools: read, external');
+    expect(prompt).toContain('- Skills: review');
+
+    await runtime.spawn('reviewer');
+    expect(runtime.executions[0]?.getSubAgent('reviewer')?.agent.prompt).toBe('REVIEWER PROMPT');
+    // The roster, not a hardcoded enum, gates creation.
+    await expect(runtime.spawn('ghost')).rejects.toThrow('unavailable agent');
+  });
+
+  it('governs a user agent through the settings map without deleting its file', () => {
+    const reviewerFile = path.join(globalDirectory, 'reviewer.md');
+    writeFileSync(reviewerFile, userSource('reviewer', 'REVIEWER PROMPT'));
+    const runtime = setup([], true, 'megamind', { globalAgentsDirectory: globalDirectory });
+    runtime.setConfig(MultiverseConfigSchema.parse({ enabled: true, defaultAgent: 'megamind', subagents: { reviewer: { enabled: false } } }));
+    runtime.start();
+
+    const names = rosterNames(runtime.turn()?.systemPrompt);
+    expect(names).toContain('@researcher');
+    expect(names).not.toContain('@reviewer');
+    expect(existsSync(reviewerFile)).toBe(true);
   });
 });
