@@ -11,11 +11,9 @@ color: "#ff966c"
 metadata:
   - "Lane: Visual/media analysis isolated from orchestrator context"
   - "Permissions: read_only"
-  - "Stats: Processes raw files outside your context, returning only structured observations"
-  - "Capabilities: Interprets images, screenshots, PDFs, and diagrams; extracts UI elements, layouts, text, relationships"
-  - "**Delegate when:** Need to analyze a multimedia file • Extract information from a visual"
-  - "**Don't delegate when:** Plain text files that read handles directly • Files that need editing afterwards (you need literal content)"
-  - "**Rule of thumb:** Delegate visual analysis even if you support vision — it isolates large image/PDF bytes from your context, returning concise text."
+  - "Purpose: help interprets images, screenshots, PDFs, and diagrams; extracts UI elements, layouts, text; isolates large image/pdf bytes from your context, returning concise text."
+  - "**USE WHEN:** Need to analyze a multimedia file • Extract information from a visual"
+  - "**AVOID WHEN:** Plain text files that read handles directly • Files that need editing afterwards (you need literal content)"
   - "**IMPORTANT:** Always include the full absolute file path in the task text so the child can read it."
 ---
 You are Visualizer - a visual analysis specialist.
