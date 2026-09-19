@@ -1,5 +1,11 @@
 # @0xkahi/pi-arsenal
 
+## 0.3.5
+
+### Patch Changes
+
+- 1edbd33: updated subagents metadata
+
 ## 0.3.4
 
 ### Patch Changes
