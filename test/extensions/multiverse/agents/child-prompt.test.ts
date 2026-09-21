@@ -60,9 +60,11 @@ describe('child prompt policy', () => {
     const { handlers, ctx, notifications, activeToolSelections, start } = setup([childEntry()]);
     start('startup');
 
-    const result = handlers.get('before_agent_start')?.[0]?.({ systemPrompt: 'HOST\nPROJECT APPEND\nCLI APPEND\nMEGAMIND' }, ctx) as
-      | { systemPrompt?: string }
-      | undefined;
+    const event = {
+      systemPrompt: 'HOST\nPROJECT APPEND\nCLI APPEND\nMEGAMIND',
+      systemPromptOptions: { sections: {} as Record<string, string> },
+    };
+    const result = handlers.get('before_agent_start')?.[0]?.(event as never, ctx) as { systemPrompt?: string } | undefined;
 
     expect(notifications).toEqual([]);
     expect(activeToolSelections).toEqual([['read', 'grep', 'find', 'ls', 'bash']]);
@@ -74,7 +76,7 @@ describe('child prompt policy', () => {
     expect(result?.systemPrompt).not.toContain('MEGAMIND');
     expect(`${result?.systemPrompt}\nLATER EXTENSION`).toEndWith('LATER EXTENSION');
 
-    handlers.get('before_agent_start')?.[0]?.({ systemPrompt: 'HOST AGAIN' }, ctx);
+    handlers.get('before_agent_start')?.[0]?.({ systemPrompt: 'HOST AGAIN', systemPromptOptions: { sections: {} } } as never, ctx);
     expect(activeToolSelections).toEqual([['read', 'grep', 'find', 'ls', 'bash']]);
   });
 
@@ -82,9 +84,12 @@ describe('child prompt policy', () => {
     const { handlers, ctx, activeToolSelections, start } = setup([]);
     start('startup');
 
-    const result = handlers.get('before_agent_start')?.[0]?.({ systemPrompt: 'HOST' }, ctx);
+    const event = { systemPrompt: 'HOST', systemPromptOptions: { sections: { orchestrator_role: 'STALE' } as Record<string, string> } };
+    const result = handlers.get('before_agent_start')?.[0]?.(event as never, ctx);
 
     expect(result).toBeUndefined();
+    // A Default parent owns no Megamind section and must clear any stale contribution.
+    expect(event.systemPromptOptions.sections.orchestrator_role).toBeUndefined();
     // A Default parent keeps its own tools and never receives the spawn tool.
     expect(activeToolSelections.every(selection => !selection.includes('spawn'))).toBe(true);
     expect(handlers.has('tool_call')).toBe(false);

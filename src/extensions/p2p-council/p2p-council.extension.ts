@@ -270,6 +270,13 @@ export function registerP2pCouncil(pi: ExtensionAPI, deps: { config: ConfigProvi
       return;
     }
     if (activation) return;
-    activation = activateP2pCouncil(pi, ctx, deps);
+    const created = activateP2pCouncil(pi, ctx, deps);
+    activation = created;
+    // Pi snapshots its event-handler list before dispatching each event, so the
+    // `session_start` gate registered inside `activateP2pCouncil` does not receive this first
+    // event. Reconcile here so a disconnected first startup still strips the p2p tools that Pi
+    // force-activates before `session_start`. `activateP2pCouncil`'s own listener refreshes on
+    // later `session_start` events (restored connections, `/reload`).
+    setP2pToolsActive(pi, enabled && created.state.isConnected());
   });
 }

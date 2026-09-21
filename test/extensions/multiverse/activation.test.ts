@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import type { JsonValue } from '@earendil-works/pi-ai';
 import type { ExtensionAPI, ExtensionContext, SessionEntry } from '@earendil-works/pi-coding-agent';
 import type { ConfigProvider } from '../../../src/config/config-loader.ts';
 import { PI_VIM_KEY_EVENT_ID } from '../../../src/extensions/multiverse/constants.ts';
@@ -24,22 +25,24 @@ const identity = (agent = 'researcher', version = 1): SessionEntry => ({
   customType: 'arsenal-subagent',
   data: { version, agent, parentSessionId: 'parent' },
 });
-const reference = (): SessionEntry =>
-  ({
-    type: 'message',
-    id: 'result',
-    parentId: null,
-    timestamp: '',
-    message: {
-      role: 'toolResult',
-      toolName: 'spawn',
-      toolCallId: 'call',
-      content: [],
-      isError: false,
-      timestamp: 0,
-      details: { version: 1, kind: 'spawn', interactions: [childInteraction({ agent: 'researcher' })] },
-    },
-  }) as SessionEntry;
+/** Persisted spawn details are JSON; serialize the typed fixture so the entry carries a genuinely JSON-compatible value. */
+const persistedJson = (value: unknown): JsonValue => JSON.parse(JSON.stringify(value));
+
+const reference = (): SessionEntry => ({
+  type: 'message',
+  id: 'result',
+  parentId: null,
+  timestamp: '',
+  message: {
+    role: 'toolResult',
+    toolName: 'spawn',
+    toolCallId: 'call',
+    content: [],
+    isError: false,
+    timestamp: 0,
+    details: persistedJson({ version: 1, kind: 'spawn', interactions: [childInteraction({ agent: 'researcher' })] }),
+  },
+});
 
 describe('Multiverse activation lifecycle', () => {
   let directory: string;
@@ -130,7 +133,11 @@ describe('Multiverse activation lifecycle', () => {
     });
     bound = true;
     const start = () => handlers.get('session_start')?.({} as never, ctx);
-    const turn = () => handlers.get('before_agent_start')?.({ systemPrompt: 'HOST' } as never, ctx) as { systemPrompt: string } | undefined;
+    const turn = (sections: Record<string, string> = {}) => {
+      const event = { systemPrompt: 'HOST', systemPromptOptions: { sections: { ...sections } } };
+      const result = handlers.get('before_agent_start')?.(event as never, ctx) as { systemPrompt?: string } | undefined;
+      return { result, contribution: event.systemPromptOptions.sections.orchestrator_role, sections: event.systemPromptOptions.sections };
+    };
     const spawn = (agent = 'researcher') =>
       tool.execute('call', { context: 'shared', tasks: [{ action: 'create', agent, task: 'work' }] } as never, undefined, undefined, ctx);
     return {
@@ -166,7 +173,7 @@ describe('Multiverse activation lifecycle', () => {
     runtime.setConfig(MultiverseConfigSchema.parse({ enabled: true, defaultAgent: 'megamind', maxConcurrency: 2 }));
     runtime.start();
     expect(runtime.activation.parentAgentState.getActive()).toBe('megamind');
-    expect(runtime.turn()?.systemPrompt).toContain('@researcher');
+    expect(runtime.turn().contribution).toContain('@researcher');
     await Bun.sleep(20);
     expect(runtime.agentNameEvents).toEqual(['MEGAMIND']);
   });
@@ -180,8 +187,8 @@ describe('Multiverse activation lifecycle', () => {
     writeFileSync(path.join(directory, 'different-name.md'), 'now invalid');
     const mutations = runtime.selections.length;
     const first = runtime.turn();
-    expect(first?.systemPrompt).toContain('@researcher');
-    expect(first?.systemPrompt).toContain('- Tools: read, missing');
+    expect(first.contribution).toContain('@researcher');
+    expect(first.contribution).toContain('- Tools: read, missing');
     expect(runtime.turn()).toEqual(first);
     await runtime.spawn();
     expect(runtime.executions[0]?.getSubAgent('researcher')?.agent.prompt).toBe('original child prompt');
@@ -207,8 +214,8 @@ describe('Multiverse activation lifecycle', () => {
     const runtime = setup([identity()]);
     runtime.start();
     expect(runtime.active()).toEqual(['read']);
-    expect(runtime.turn()).toEqual({ systemPrompt: 'original child prompt' });
-    expect(runtime.turn()).toEqual({ systemPrompt: 'original child prompt' });
+    expect(runtime.turn().result).toEqual({ systemPrompt: 'original child prompt' });
+    expect(runtime.turn().result).toEqual({ systemPrompt: 'original child prompt' });
     expect(runtime.selections).toHaveLength(1);
   });
 
@@ -216,10 +223,10 @@ describe('Multiverse activation lifecycle', () => {
     const old = setup([identity()]);
     old.start();
     writeFileSync(path.join(directory, 'different-name.md'), source('updated child prompt'));
-    expect(old.turn()?.systemPrompt).toBe('original child prompt');
+    expect(old.turn().result?.systemPrompt).toBe('original child prompt');
     const fresh = setup([identity()]);
     fresh.start();
-    expect(fresh.turn()?.systemPrompt).toBe('updated child prompt');
+    expect(fresh.turn().result?.systemPrompt).toBe('updated child prompt');
   });
 
   it.each([identity(), identity('missing-agent'), identity('researcher', 2)])('ignores persisted child identity while disabled', async marker => {
@@ -227,7 +234,7 @@ describe('Multiverse activation lifecycle', () => {
     const runtime = setup(entries, false);
     runtime.start();
     expect(runtime.active()).toEqual(['read', 'external']);
-    expect(runtime.turn()).toBeUndefined();
+    expect(runtime.turn().result).toBeUndefined();
     expect(runtime.notifications).toEqual([]);
     expect(entries).toEqual([marker]);
     await expect(runtime.spawn()).rejects.toThrow('eligible Megamind parent');
@@ -238,12 +245,12 @@ describe('Multiverse activation lifecycle', () => {
     const marker = identity();
     const disabled = setup([marker], false);
     disabled.start();
-    expect(disabled.turn()).toBeUndefined();
+    expect(disabled.turn().result).toBeUndefined();
 
     const enabled = setup([marker], true);
     enabled.start();
     expect(enabled.active()).toEqual(['read']);
-    expect(enabled.turn()?.systemPrompt).toBe('original child prompt');
+    expect(enabled.turn().result?.systemPrompt).toBe('original child prompt');
   });
 
   it.each([identity('unregistered'), identity('researcher', 2)])('reports invalid/unavailable children during activation', marker => {
@@ -262,7 +269,7 @@ describe('Multiverse activation lifecycle', () => {
     runtime.start();
     expect(runtime.active()).toEqual([]);
     expect(runtime.notifications.join('\n')).toContain('disabled');
-    expect(runtime.turn()).toBeUndefined();
+    expect(runtime.turn().result).toBeUndefined();
   });
 
   it('refuses spawn from Default parents and enabled children', async () => {
@@ -325,7 +332,7 @@ describe('Multiverse activation lifecycle', () => {
 
     expect(runtime.activation.parentAgentState.getActive()).toBe('megamind');
     expect(runtime.active()).toContain('spawn');
-    expect(runtime.turn()?.systemPrompt).toContain('@researcher');
+    expect(runtime.turn().contribution).toContain('@researcher');
     expect(runtime.entries.at(-1)).toMatchObject({
       customType: 'arsenal-parent-agent',
       data: { version: 1, agent: 'megamind' },
@@ -336,7 +343,9 @@ describe('Multiverse activation lifecycle', () => {
     await runtime.command()?.handler('', runtime.ctx);
     expect(runtime.activation.parentAgentState.getActive()).toBe('default');
     expect(runtime.active()).not.toContain('spawn');
-    expect(runtime.turn()).toBeUndefined();
+    const defaultTurn = runtime.turn({ orchestrator_role: 'STALE' });
+    expect(defaultTurn.result).toBeUndefined();
+    expect(defaultTurn.sections.orchestrator_role).toBeUndefined();
   });
 
   it('selects presets independently of persona, snapshots them per spawn call, and resets on session start', async () => {
@@ -396,7 +405,7 @@ describe('Multiverse activation lifecycle', () => {
     const runtime = setup([], true, 'megamind', { globalAgentsDirectory: globalDirectory });
     runtime.start();
 
-    expect(rosterNames(runtime.turn()?.systemPrompt)).toContain('@reviewer');
+    expect(rosterNames(runtime.turn().contribution)).toContain('@reviewer');
     await runtime.spawn('reviewer');
     expect(runtime.executions[0]?.getSubAgent('reviewer')?.agent.prompt).toBe('GLOBAL REVIEWER PROMPT');
   });
@@ -406,11 +415,11 @@ describe('Multiverse activation lifecycle', () => {
 
     const trusted = setup([], true, 'megamind', { trusted: true, projectAgentsDirectory: projectDirectory });
     trusted.start();
-    expect(rosterNames(trusted.turn()?.systemPrompt)).toContain('@projector');
+    expect(rosterNames(trusted.turn().contribution)).toContain('@projector');
 
     const untrusted = setup([], true, 'megamind', { trusted: false, projectAgentsDirectory: projectDirectory });
     untrusted.start();
-    expect(rosterNames(untrusted.turn()?.systemPrompt)).not.toContain('@projector');
+    expect(rosterNames(untrusted.turn().contribution)).not.toContain('@projector');
   });
 
   it('registers global agents while an untrusted project contributes nothing', () => {
@@ -423,7 +432,7 @@ describe('Multiverse activation lifecycle', () => {
     });
     runtime.start();
 
-    const names = rosterNames(runtime.turn()?.systemPrompt);
+    const names = rosterNames(runtime.turn().contribution);
     expect(names).toContain('@reviewer');
     expect(names).not.toContain('@projector');
   });
@@ -431,7 +440,7 @@ describe('Multiverse activation lifecycle', () => {
   it('registers exactly the bundled roster with no warning when both user directories are absent', () => {
     const runtime = setup();
     runtime.start();
-    expect(rosterNames(runtime.turn()?.systemPrompt)).toEqual(['@researcher']);
+    expect(rosterNames(runtime.turn().contribution)).toEqual(['@researcher']);
     // The only diagnostic is the bundled definition's unknown tool; absent directories stay silent.
     expect(runtime.notifications.join('\n')).not.toContain('unable to discover');
   });
@@ -460,7 +469,7 @@ describe('Multiverse activation lifecycle', () => {
     const runtime = setup([], true, 'megamind', { globalAgentsDirectory: globalDirectory });
     runtime.start();
 
-    const prompt = runtime.turn()?.systemPrompt ?? '';
+    const prompt = runtime.turn().contribution ?? '';
     expect(prompt).toContain('@reviewer');
     expect(prompt).toContain('Lane: review');
     expect(prompt).toContain('Reviews diffs');
@@ -480,7 +489,7 @@ describe('Multiverse activation lifecycle', () => {
     runtime.setConfig(MultiverseConfigSchema.parse({ enabled: true, defaultAgent: 'megamind', subagents: { reviewer: { enabled: false } } }));
     runtime.start();
 
-    const names = rosterNames(runtime.turn()?.systemPrompt);
+    const names = rosterNames(runtime.turn().contribution);
     expect(names).toContain('@researcher');
     expect(names).not.toContain('@reviewer');
     expect(existsSync(reviewerFile)).toBe(true);

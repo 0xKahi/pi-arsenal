@@ -107,7 +107,11 @@ describe('Multiverse activation against real session files', () => {
       activation,
       notifications,
       start: () => handlers.get('session_start')?.({} as never, ctx),
-      turn: () => handlers.get('before_agent_start')?.({ systemPrompt: 'HOST PROMPT' } as never, ctx) as { systemPrompt: string } | undefined,
+      turn: () => {
+        const event = { systemPrompt: 'HOST PROMPT', systemPromptOptions: { sections: {} as Record<string, string> } };
+        const result = handlers.get('before_agent_start')?.(event as never, ctx) as { systemPrompt?: string } | undefined;
+        return { result, contribution: event.systemPromptOptions.sections.orchestrator_role };
+      },
       tools: () => activeTools,
     };
   };
@@ -121,8 +125,8 @@ describe('Multiverse activation against real session files', () => {
     expect(harnessed.tools()).toEqual(['read']);
 
     const turn = harnessed.turn();
-    expect(turn?.systemPrompt).toBe('ORIGINAL CHILD PROMPT');
-    expect(turn?.systemPrompt).not.toContain('HOST PROMPT');
+    expect(turn.result?.systemPrompt).toBe('ORIGINAL CHILD PROMPT');
+    expect(turn.result?.systemPrompt).not.toContain('HOST PROMPT');
   });
 
   it('leaves a reopened child untouched when Multiverse is disabled', () => {
@@ -131,24 +135,24 @@ describe('Multiverse activation against real session files', () => {
 
     // Disabled means "off", not "enforce child restrictions": only the spawn tool is withdrawn.
     expect(harnessed.tools()).toEqual(['read', 'bash', 'write']);
-    expect(harnessed.turn()).toBeUndefined();
+    expect(harnessed.turn().result).toBeUndefined();
   });
 
   it('adopts an edited definition on the next reload rather than mid-session', () => {
     const before = harness({ sessionManager: SessionManager.open(childSessionFile) });
     before.start();
-    expect(before.turn()?.systemPrompt).toBe('ORIGINAL CHILD PROMPT');
+    expect(before.turn().result?.systemPrompt).toBe('ORIGINAL CHILD PROMPT');
 
     writeFileSync(definitionFile, definitionSource('UPDATED CHILD PROMPT', '[read, bash]'));
 
     // The running session keeps the definition it activated with.
-    expect(before.turn()?.systemPrompt).toBe('ORIGINAL CHILD PROMPT');
+    expect(before.turn().result?.systemPrompt).toBe('ORIGINAL CHILD PROMPT');
     expect(before.tools()).toEqual(['read']);
 
     // A fresh extension instance — a reload or reopen — picks the edit up.
     const after = harness({ sessionManager: SessionManager.open(childSessionFile) });
     after.start();
-    expect(after.turn()?.systemPrompt).toBe('UPDATED CHILD PROMPT');
+    expect(after.turn().result?.systemPrompt).toBe('UPDATED CHILD PROMPT');
     expect(after.tools()).toEqual(['read', 'bash']);
   });
 
@@ -163,14 +167,13 @@ describe('Multiverse activation against real session files', () => {
 
     const toolsBeforeTurn = harnessed.tools();
     const turn = harnessed.turn();
-    // The Megamind contribution appends to the host prompt and never mutates tools.
-    expect(turn?.systemPrompt).toContain('HOST PROMPT');
-    expect(turn?.systemPrompt).toContain('explorer');
+    // The Megamind contribution is an additive section, not a full replacement, and never mutates tools.
+    expect(turn.result).toBeUndefined();
+    expect(turn.contribution).toContain('explorer');
     expect(harnessed.tools()).toEqual(toolsBeforeTurn);
 
     // Repeated turns must not accumulate copies of the contribution.
-    const first = turn?.systemPrompt ?? '';
-    expect(harnessed.turn()?.systemPrompt).toBe(first);
+    expect(harnessed.turn().contribution).toBe(turn.contribution);
   });
 
   it('warns about unknown declared tools without disabling the agent', () => {
@@ -215,7 +218,7 @@ describe('Multiverse activation against real session files', () => {
       expect(opened.activation.roleState.get().kind).toBe('child');
       // Only the definition's declared tools survive, exactly as for a bundled child.
       expect(opened.tools()).toEqual(['read']);
-      expect(opened.turn()?.systemPrompt).toBe('REVIEWER CHILD PROMPT');
+      expect(opened.turn().result?.systemPrompt).toBe('REVIEWER CHILD PROMPT');
 
       // The durable identity marker names the user-defined agent.
       const identity = SubagentIdentityHandler.parse(SessionManager.open(handle.sessionFile).getEntries());
