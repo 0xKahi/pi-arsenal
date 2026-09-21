@@ -1,5 +1,11 @@
 # @0xkahi/pi-arsenal
 
+## 0.3.7
+
+### Patch Changes
+
+- eb36171: subagent system prompt v1
+
 ## 0.3.6
 
 ### Patch Changes
