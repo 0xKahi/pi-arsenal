@@ -1,5 +1,11 @@
 # @0xkahi/pi-arsenal
 
+## 0.3.6
+
+### Patch Changes
+
+- 65f922a: updated extension to be compatable with pi v0.86.1
+
 ## 0.3.5
 
 ### Patch Changes
