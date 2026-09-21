@@ -181,14 +181,19 @@ function activateMultiverse(pi: ExtensionAPI, dependencies: MultiverseDependenci
       return { systemPrompt: runtime.registeredSubAgentSession.prompt };
     }
 
-    if (roleState.get().kind === 'parent' && parentAgentState.getActive() === 'megamind') {
-      const config = dependencies.config.getMultiverse();
-      const systemPrompt = `${event.systemPrompt}\n\n${buildMegamindPrompt(subAgents.availableSubAgents, config.maxConcurrency)}`;
-
-      if (MULTIVERSE_DEBUG) DebugLoggerUtil.logToMarkdown(parentAgentState.getActive(), { header: 'System Prompt', contents: [systemPrompt] });
-
-      return { systemPrompt };
+    // Megamind is additive content, so contribute it as a named section rather than replacing
+    // the whole prompt. This keeps the host prompt and lets Pi diff/append only the changed
+    // section, and lets us delete it again when the parent returns to Default.
+    if (roleState.get().kind !== 'parent' || parentAgentState.getActive() !== 'megamind') {
+      delete event.systemPromptOptions.sections.orchestrator_role;
+      return;
     }
+
+    const config = dependencies.config.getMultiverse();
+    const megamindPrompt = buildMegamindPrompt(subAgents.availableSubAgents, config.maxConcurrency);
+    event.systemPromptOptions.sections.orchestrator_role = megamindPrompt;
+
+    if (MULTIVERSE_DEBUG) DebugLoggerUtil.logToMarkdown(parentAgentState.getActive(), { header: 'System Prompt', contents: [event.systemPrompt] });
   });
 
   const selectParentAgent = (agent: ParentAgent): void => {

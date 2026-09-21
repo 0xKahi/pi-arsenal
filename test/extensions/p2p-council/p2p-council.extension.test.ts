@@ -65,7 +65,9 @@ function makePi(initialActiveTools: string[] = ['read', 'bash']) {
     pi,
     getActiveTools: () => [...activeTools],
     emitSessionStart: (ctx: ExtensionContext, reason = 'startup') => {
-      for (const handler of sessionStartHandlers) handler({ type: 'session_start', reason }, ctx);
+      // Pi snapshots the handler list before dispatching, so a handler registered during
+      // dispatch (e.g. activateP2pCouncil's session_start gate) must not receive this event.
+      for (const handler of [...sessionStartHandlers]) handler({ type: 'session_start', reason }, ctx);
     },
     sessionStartHandlers,
     sessionShutdownHandlers,
@@ -191,6 +193,24 @@ describe('registerP2pCouncil lazy activation', () => {
     replacement.emitSessionStart(makeCtx(cwd), 'reload');
 
     expect(replacement.getActiveTools()).toEqual(['read', 'bash', 'p2p_send', 'p2p_ask', 'p2p_ls']);
+  });
+
+  it('reconciles the connection gate on subsequent session_start events', async () => {
+    mockConfig(true);
+    const runtime = makePi(['read', 'bash', 'p2p_send', 'p2p_ask', 'p2p_ls']);
+    registerP2pCouncil(runtime.pi, { config });
+
+    // First startup is disconnected: the immediate reconcile strips Pi's preactivated tools.
+    runtime.emitSessionStart(makeCtx(cwd));
+    expect(runtime.getActiveTools()).toEqual(['read', 'bash']);
+
+    // The preserved service later connects; a subsequent event is handled by the gate
+    // registered inside activateP2pCouncil, which must re-enable the tools.
+    const state = resolveP2pCouncilService();
+    if (!state) throw new Error('missing p2p service');
+    await state.createCouncil('subsequent-startup-council');
+    runtime.emitSessionStart(makeCtx(cwd));
+    expect(runtime.getActiveTools()).toEqual(['read', 'bash', 'p2p_send', 'p2p_ask', 'p2p_ls']);
   });
 
   it('deactivates Pi-preactivated tools while disabled even if a connected service exists', async () => {

@@ -14,7 +14,7 @@ const definition = (name: string): SubagentDefinition => ({
 describe('buildMegamindPrompt', () => {
   it('assembles approved sections around arbitrary roster names and their metadata', () => {
     const prompt = buildMegamindPrompt([definition('researcher'), definition('reviewer')], 3);
-    expect(prompt).toStartWith('\n# Orchestrator Role');
+    expect(prompt).toStartWith('\nYou are a workflow manager for coding work.');
     expect(prompt).toContain('@researcher\n- Lane: researcher lane');
     expect(prompt.indexOf('@researcher')).toBeLessThan(prompt.indexOf('@reviewer'));
     expect(prompt.indexOf('</available_agents>')).toBeLessThan(prompt.indexOf('<workflow>'));

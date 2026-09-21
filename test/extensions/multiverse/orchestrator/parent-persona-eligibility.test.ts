@@ -54,8 +54,11 @@ const setup = (enabled: boolean, enabledRoster = true) => {
     globalAgentsDirectory: '/tmp/pi-arsenal-absent-global-agents',
   });
   const start = () => handlers.get('session_start')?.[0]?.({ type: 'session_start', reason: 'startup' } as never, ctx);
-  const beforeAgentStart = (systemPrompt: string) =>
-    handlers.get('before_agent_start')?.[0]?.({ systemPrompt } as never, ctx) as { systemPrompt?: string } | undefined;
+  const beforeAgentStart = (systemPrompt: string, sections: Record<string, string> = {}) => {
+    const event = { systemPrompt, systemPromptOptions: { sections: { ...sections } } };
+    const result = handlers.get('before_agent_start')?.[0]?.(event as never, ctx) as { systemPrompt?: string } | undefined;
+    return { event, result, contribution: event.systemPromptOptions.sections.orchestrator_role, sections: event.systemPromptOptions.sections };
+  };
   return { activation, notifications, agentNameEvents, start, beforeAgentStart };
 };
 
@@ -89,16 +92,18 @@ describe('parent persona eligibility', () => {
     expect(runtime.activation.parentAgentState.getActive()).toBe('megamind');
 
     const first = runtime.beforeAgentStart('HOST\nPROJECT APPEND');
-    expect(first?.systemPrompt).toStartWith('HOST\nPROJECT APPEND');
-    expect(first?.systemPrompt).toContain('# Orchestrator Role');
-    expect(first?.systemPrompt).toContain('@explorer');
-    expect(first?.systemPrompt).toContain('@fixer');
-    expect(first?.systemPrompt).toContain('@visualizer');
-    expect(first?.systemPrompt).toContain('<available_agents>');
-    expect(`${first?.systemPrompt}\nLATER EXTENSION`).toEndWith('LATER EXTENSION');
+    // Additive: the handler must not replace the host prompt, only contribute a section.
+    expect(first.result).toBeUndefined();
+    expect(first.event.systemPrompt).toBe('HOST\nPROJECT APPEND');
+    expect(first.contribution).toContain('You are a workflow manager for coding work.');
+    expect(first.contribution).toContain('@explorer');
+    expect(first.contribution).toContain('@fixer');
+    expect(first.contribution).toContain('@visualizer');
+    expect(first.contribution).toContain('<available_agents>');
 
+    // Repeated turns rebuild the section from scratch rather than appending copies.
     const second = runtime.beforeAgentStart('HOST\nPROJECT APPEND');
-    expect(second).toEqual(first);
+    expect(second.contribution).toBe(first.contribution);
   });
 
   it('keeps a Default parent turn free of any Megamind contribution', () => {
@@ -106,6 +111,8 @@ describe('parent persona eligibility', () => {
     runtime.start();
     runtime.activation.parentAgentState.setActive('default');
 
-    expect(runtime.beforeAgentStart('HOST')).toBeUndefined();
+    const turn = runtime.beforeAgentStart('HOST', { orchestrator_role: 'STALE' });
+    expect(turn.result).toBeUndefined();
+    expect(turn.sections.orchestrator_role).toBeUndefined();
   });
 });
