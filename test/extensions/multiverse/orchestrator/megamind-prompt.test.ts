@@ -15,11 +15,12 @@ describe('buildMegamindPrompt', () => {
   it('assembles approved sections around arbitrary roster names and their metadata', () => {
     const prompt = buildMegamindPrompt([definition('researcher'), definition('reviewer')], 3);
     expect(prompt).toStartWith('\nYou are a workflow manager for coding work.');
-    expect(prompt).toContain('@researcher\n- Lane: researcher lane');
-    expect(prompt.indexOf('@researcher')).toBeLessThan(prompt.indexOf('@reviewer'));
+    expect(prompt).toContain('<name>researcher</name>');
+    expect(prompt).toContain('     - Lane: researcher lane');
+    expect(prompt.indexOf('<name>researcher</name>')).toBeLessThan(prompt.indexOf('<name>reviewer</name>'));
     expect(prompt.indexOf('</available_agents>')).toBeLessThan(prompt.indexOf('<workflow>'));
     expect(prompt).toContain('<spawn_tool_guide>');
     expect(prompt).not.toContain('child-only prompt');
-    expect(prompt).toContain('- Tools: read');
+    expect(prompt).toContain('<tools>read</tools>');
   });
 });

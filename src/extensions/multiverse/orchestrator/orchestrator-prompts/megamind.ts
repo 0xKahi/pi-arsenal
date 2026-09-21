@@ -130,6 +130,7 @@ Reconcile every writer lane before final validation. Resolve conflicts between o
 
 const availableAgentsSection = (roster: readonly SubagentDefinition[]) => {
   const content = [
+    '<subagents>',
     'the following specialized agents are available to you for task delegation, using the `spawn` tool',
     "each agent lists out their metadata to inform you -> 'what is their specialty?', 'when should i delegate to them?', 'what are their limitations?', 'what tools/perms/skills do they have?'.",
     'always take into account agents metadata when delegating tasks to them.',
@@ -137,17 +138,20 @@ const availableAgentsSection = (roster: readonly SubagentDefinition[]) => {
     'If skill is required for a task, and agent does not have it, pass the skill path to the agent in the task prompt, and instruct them to use it.',
     '',
     '<available_agents>',
-    '',
     ...roster.map(agent =>
       [
-        `@${agent.name}`,
-        ...agent.metadata.map(line => `- ${line}`),
-        `- Tools: ${agent.tools.length > 0 ? agent.tools.join(', ') : 'none'}`,
-        `- Skills: ${agent.skills.length > 0 ? agent.skills.join(', ') : 'none'}`,
-        '',
+        '  <agent>',
+        `    <name>${agent.name}</name>`,
+        `    <tools>${agent.tools.length > 0 ? agent.tools.join(', ') : 'none'}</tools>`,
+        `    <skills>${agent.skills.length > 0 ? agent.skills.join(', ') : 'none'}</skills>`,
+        `    <metadata>`,
+        ...agent.metadata.map(line => `     - ${line}`),
+        `    </metadata>`,
+        '  </agent>',
       ].join('\n'),
     ),
     '</available_agents>',
+    '</subagents>',
   ];
   return content.join('\n');
 };
