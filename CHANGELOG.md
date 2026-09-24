@@ -1,5 +1,11 @@
 # @0xkahi/pi-arsenal
 
+## 0.3.8
+
+### Patch Changes
+
+- ab05eac: multiverse: fix continuations breaking after failed/aborted continues, report child provider errors as failures, serialize parallel spawn calls, and reduce progress update overhead
+
 ## 0.3.7
 
 ### Patch Changes
