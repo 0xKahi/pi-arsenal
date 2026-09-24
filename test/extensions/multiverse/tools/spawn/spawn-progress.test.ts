@@ -93,6 +93,22 @@ describe('SpawnProgress', () => {
     expect(progress.snapshot()[0]?.phase).toBe('failed');
   });
 
+  it('reports a change only for events that alter visible progress', () => {
+    const progress = progressFor({ value: 0 });
+    progress.start(0);
+    const token = { type: 'message_update', message: { role: 'assistant', content: [] } } as unknown as AgentSessionEvent;
+
+    expect(progress.observe(0, { type: 'agent_start' } as AgentSessionEvent)).toBe(true);
+    expect(progress.observe(0, token)).toBe(false);
+    expect(progress.observe(0, startEvent('read', { path: 'a' }))).toBe(true);
+    expect(progress.observe(0, endEvent('read'))).toBe(true);
+    expect(progress.observe(0, { type: 'agent_end', messages: [] } as unknown as AgentSessionEvent)).toBe(false);
+    // Settled and unknown tasks never report changes.
+    progress.settle(0, 'success');
+    expect(progress.observe(0, startEvent('read', { path: 'b' }, '2'))).toBe(false);
+    expect(progress.observe(9, startEvent('read', { path: 'c' }, '3'))).toBe(false);
+  });
+
   it('matches concurrent tool completions by task and call ID, even after trail eviction', () => {
     const progress = progressFor({ value: 0 });
     progress.start(0);

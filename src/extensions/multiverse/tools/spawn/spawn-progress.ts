@@ -88,19 +88,24 @@ export class SpawnProgress {
     if (task) task.agent = agent;
   }
 
-  observe(index: number, event: AgentSessionEvent): void {
+  /**
+   * Returns whether visible progress changed. Children stream a `message_update` per token,
+   * so callers publish only on `true`; the component's own timer keeps spinners and elapsed
+   * time moving between changes.
+   */
+  observe(index: number, event: AgentSessionEvent): boolean {
     const task = this.tasks[index];
-    if (!task || task.outcome) return;
+    if (!task || task.outcome) return false;
     if (event.type === 'agent_start') {
       if (task.phase === 'queued') task.startedAt ??= this.now();
       task.phase = task.currentTool ? 'running' : 'waiting';
       task.settledAt = undefined;
-      return;
+      return true;
     }
     if (event.type === 'agent_end') {
       // The runtime settles the authoritative outcome after retries and cleanup.
       // Do not briefly advertise a reply for an error/aborted low-level run.
-      return;
+      return false;
     }
     if (event.type === 'tool_execution_start') {
       task.phase = 'running';
@@ -114,7 +119,7 @@ export class SpawnProgress {
       // Keep only the newest calls so a long-running child cannot grow parent details.
       if (task.trail.length > MAX_TOOL_TRAIL_ENTRIES) task.trail.shift();
       this.runningTools.set(`${index}:${event.toolCallId}`, { index, entry });
-      return;
+      return true;
     }
     if (event.type === 'tool_execution_end') {
       const key = `${index}:${event.toolCallId}`;
@@ -127,7 +132,9 @@ export class SpawnProgress {
       task.lastToolError = active ? undefined : event.isError === true;
       task.currentTool = displayed?.tool ?? event.toolName;
       task.currentToolInput = displayed?.input;
+      return true;
     }
+    return false;
   }
 
   settle(index: number, status: ChildInteractionStatus, error?: string): void {

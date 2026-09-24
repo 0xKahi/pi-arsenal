@@ -265,6 +265,37 @@ describe('runSpawn', () => {
     expect(snapshots.at(-1)).toBe('fixer task 1:replied');
   });
 
+  it('does not publish progress for streamed token events', async () => {
+    const state = harness();
+    let published = 0;
+    const token = { type: 'message_update', message: { role: 'assistant', content: [] } } as never;
+
+    await runSpawn(
+      { context: 'shared context', tasks: [{ action: 'create', agent: 'fixer', task: 'x' }] },
+      makeDependencies(state, {}, async () => outcome()),
+      { onProgress: () => void published++ },
+    );
+    const baseline = published;
+
+    published = 0;
+    await runSpawn(
+      { context: 'shared context', tasks: [{ action: 'create', agent: 'fixer', task: 'x' }] },
+      makeDependencies(state, {
+        runtime: {
+          run: async (input: RunChildInteractionInput) => {
+            for (let i = 0; i < 100; i++) input.onEvent?.(token);
+            input.onEvent?.({ type: 'tool_execution_start', toolCallId: '1', toolName: 'read', args: {} } as never);
+            return outcome();
+          },
+        } as unknown as ChildRuntime,
+      }),
+      { onProgress: () => void published++ },
+    );
+
+    // 100 token events add nothing; only the tool start adds one publish.
+    expect(published).toBe(baseline + 1);
+  });
+
   it('allows only one managed writer per child within a call', async () => {
     const state = harness();
     const admission = new ChildAdmissionRegistry();

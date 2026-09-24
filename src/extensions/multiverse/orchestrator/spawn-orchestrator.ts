@@ -146,8 +146,8 @@ async function runTask(context: RunTaskInput): Promise<ChildInteraction> {
       checkpoint,
       signal: context.signal,
       onEvent: event => {
-        context.progress.observe(index, event);
-        context.publish();
+        // Skip no-op events (notably per-token `message_update`) so streaming stays cheap.
+        if (context.progress.observe(index, event)) context.publish();
       },
     });
 
