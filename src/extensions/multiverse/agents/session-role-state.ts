@@ -25,8 +25,4 @@ export class SessionRoleState {
   get(): SessionRole {
     return this.role;
   }
-
-  isChild(): boolean {
-    return this.role.kind === 'child';
-  }
 }

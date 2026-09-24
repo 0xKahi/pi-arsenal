@@ -169,10 +169,10 @@ interface RuntimeState {
 type LoaderOptions = ConstructorParameters<typeof DefaultResourceLoader>[0];
 type SessionOptions = NonNullable<Parameters<typeof createAgentSession>[0]>;
 
-const agentEnd = (texts: string[]): AgentSessionEvent =>
+const agentEnd = (texts: string[], details: { stopReason?: string; errorMessage?: string } = {}): AgentSessionEvent =>
   ({
     type: 'agent_end',
-    messages: [{ role: 'assistant', content: texts.map(text => ({ type: 'text', text })) }],
+    messages: [{ role: 'assistant', content: texts.map(text => ({ type: 'text', text })), ...details }],
   }) as unknown as AgentSessionEvent;
 
 /** Builds a ChildRuntime whose SDK seams are stubbed, plus the records those seams captured. */
@@ -314,6 +314,40 @@ describe('ChildRuntime.run', () => {
     expect(result.telemetry).toMatchObject({ requests: 2, tokensInput: 11, tokensOutput: 7, cost: 0.5, model: 'provider/model' });
     expect(runner.state.disposed).toBe(true);
     expect(runner.state.listeners).toEqual([]);
+  });
+
+  it('reports provider errors from the final assistant message as failures', async () => {
+    const runner = scenario();
+    runner.state.events = [agentEnd(['partial response'], { stopReason: 'error', errorMessage: 'rate limited' })];
+    const stub = stubbedRuntime(runner.state, runner.sessionManager);
+
+    const result = await stub.runtime.run(runner.input);
+
+    expect(result.status).toBe('failure');
+    expect(result.error).toBe('rate limited');
+    expect(result.text).toBe('partial response');
+  });
+
+  it('reports an aborted final assistant message as aborted', async () => {
+    const runner = scenario();
+    runner.state.events = [agentEnd(['partial response'], { stopReason: 'aborted' })];
+    const stub = stubbedRuntime(runner.state, runner.sessionManager);
+
+    const result = await stub.runtime.run(runner.input);
+
+    expect(result.status).toBe('aborted');
+    expect(result.text).toBe('partial response');
+  });
+
+  it('uses the final agent_end when a provider retry succeeds', async () => {
+    const runner = scenario();
+    runner.state.events = [agentEnd([], { stopReason: 'error', errorMessage: 'rate limited' }), agentEnd(['recovered'], { stopReason: 'stop' })];
+    const stub = stubbedRuntime(runner.state, runner.sessionManager);
+
+    const result = await stub.runtime.run(runner.input);
+
+    expect(result.status).toBe('success');
+    expect(result.text).toBe('recovered');
   });
 
   it('selects the requested checkpoint before the runtime is constructed', async () => {

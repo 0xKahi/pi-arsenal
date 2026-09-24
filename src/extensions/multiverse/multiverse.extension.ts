@@ -94,6 +94,9 @@ export function registerMultiverse(pi: ExtensionAPI, dependencies: MultiverseDep
     }),
   );
 
+  // Pi hosts create a fresh extension instance per session switch, fork, and reload, so today this
+  // fires once per instance. The SDK still permits `bindExtensions()` to run more than once, and a
+  // second activation would double-register the prompt hook, command, and key listener.
   let activated = false;
   pi.on('session_start', (_event, ctx) => {
     const settings = dependencies.config.getMultiverse();

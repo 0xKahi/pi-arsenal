@@ -239,7 +239,7 @@ All child-authored text reaching the renderer, including tool arguments the chil
 
 ### The run manifest
 
-Every dispatched batch also appends exactly one `arsenal-spawn-manifest` custom entry to the parent session (none when the call is rejected before dispatch). Custom entries never enter model context, and no renderer is registered for this type, so it stays invisible in the transcript while remaining recoverable from the session JSONL via `recoverSpawnManifests`.
+Every dispatched batch also appends exactly one `arsenal-spawn-manifest` custom entry to the parent session (none when the call is rejected before dispatch). Custom entries never enter model context, and no renderer is registered for this type, so it stays invisible in the transcript while remaining recoverable from the session JSONL by filtering custom entries of that type.
 
 The manifest holds **references, not content**: batch outcome and counts, the input task list, and per task the child session ID, subagent, terminal status, checkpoints, error, and telemetry. It never copies a child's response body — that lives uncapped in the child's own session, reachable by the ID the manifest records. A task that failed before any child existed is still recorded, with its input and error.
 

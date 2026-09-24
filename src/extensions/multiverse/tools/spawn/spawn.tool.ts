@@ -22,6 +22,49 @@ export { SPAWN_TOOL_NAME };
 /** Fixed model-facing text for every partial update; carries no per-task progress. */
 const PARTIAL_RECEIPT = 'Spawn dispatched; waiting for every task to settle.';
 
+class SpawnCallGate {
+  private tail: Promise<void> = Promise.resolve();
+
+  async acquire(signal?: AbortSignal): Promise<() => void> {
+    const previous = this.tail;
+    let releaseTurn!: () => void;
+    const turn = new Promise<void>(resolve => {
+      releaseTurn = resolve;
+    });
+    this.tail = previous.then(() => turn);
+
+    if (signal?.aborted) {
+      releaseTurn();
+      throw new Error('Spawn aborted before dispatch.');
+    }
+
+    let onAbort: (() => void) | undefined;
+    try {
+      await (signal
+        ? Promise.race([
+            previous,
+            new Promise<never>((_resolve, reject) => {
+              onAbort = () => {
+                releaseTurn();
+                reject(new Error('Spawn aborted before dispatch.'));
+              };
+              signal.addEventListener('abort', onAbort, { once: true });
+            }),
+          ])
+        : previous);
+    } finally {
+      if (onAbort) signal?.removeEventListener('abort', onAbort);
+    }
+
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      releaseTurn();
+    };
+  }
+}
+
 export interface SpawnToolHost {
   /** The tool is only callable while this returns dependencies; Default parents and children return undefined. */
   getExecutionContext: (ctx: ExtensionContext) => SpawnOrchestratorDependencies | { error: string } | undefined;
@@ -31,6 +74,8 @@ export interface SpawnToolHost {
 }
 
 export function createSpawnTool(host: SpawnToolHost): ToolDefinition<typeof spawnParameters, SpawnToolDetails> {
+  // Keep spawn calls serialized without making unrelated tools in the assistant turn sequential.
+  const gate = new SpawnCallGate();
   return {
     name: SPAWN_TOOL_NAME,
     label: 'spawn',
@@ -55,42 +100,47 @@ export function createSpawnTool(host: SpawnToolHost): ToolDefinition<typeof spaw
       // Preflight: reject before dispatch so a bad call leaves no children and no manifest.
       const input: SpawnInput = validateSpawnInput(params, { availableAgents: host.availableAgents() });
 
-      const boundaryNonce = createBoundaryNonce();
-      const writer = new SpawnManifestWriter();
-      const startedAt = Date.now();
-      writer.markDispatched();
-
-      let run: SpawnRunResult;
+      const release = await gate.acquire(signal);
       try {
-        run = await (host.run ?? runSpawn)(input, execution, {
-          signal,
-          // Partial updates land in model context, so `content` stays a fixed receipt and all
-          // live per-task progress goes to `details`, which the model never sees.
-          onProgress: progress =>
-            onUpdate?.({
-              content: [{ type: 'text', text: PARTIAL_RECEIPT }],
-              details: { version: CHILD_INTERACTION_VERSION, kind: 'spawn', boundaryNonce, interactions: [], progress: progress.snapshot() },
-            }),
-        });
-      } catch (error) {
-        writeManifest(host, writer, buildManifest(input, [], 'aborted', Date.now() - startedAt));
-        throw error;
+        const boundaryNonce = createBoundaryNonce();
+        const writer = new SpawnManifestWriter();
+        const startedAt = Date.now();
+        writer.markDispatched();
+
+        let run: SpawnRunResult;
+        try {
+          run = await (host.run ?? runSpawn)(input, execution, {
+            signal,
+            // Partial updates land in model context, so `content` stays a fixed receipt and all
+            // live per-task progress goes to `details`, which the model never sees.
+            onProgress: progress =>
+              onUpdate?.({
+                content: [{ type: 'text', text: PARTIAL_RECEIPT }],
+                details: { version: CHILD_INTERACTION_VERSION, kind: 'spawn', boundaryNonce, interactions: [], progress: progress.snapshot() },
+              }),
+          });
+        } catch (error) {
+          writeManifest(host, writer, buildManifest(input, [], 'aborted', Date.now() - startedAt));
+          throw error;
+        }
+
+        // The capped progress trail is persisted so the settled row can still be expanded.
+        const details: SpawnToolDetails = {
+          version: CHILD_INTERACTION_VERSION,
+          kind: 'spawn',
+          boundaryNonce,
+          interactions: run.interactions,
+          progress: run.progress.snapshot(),
+        };
+        writeManifest(host, writer, buildManifest(input, run.interactions, run.aborted ? 'aborted' : 'completed', Date.now() - startedAt));
+
+        return {
+          content: [{ type: 'text', text: buildResultEnvelope(run.interactions, boundaryNonce).content }],
+          details,
+        };
+      } finally {
+        release();
       }
-
-      // The capped progress trail is persisted so the settled row can still be expanded.
-      const details: SpawnToolDetails = {
-        version: CHILD_INTERACTION_VERSION,
-        kind: 'spawn',
-        boundaryNonce,
-        interactions: run.interactions,
-        progress: run.progress.snapshot(),
-      };
-      writeManifest(host, writer, buildManifest(input, run.interactions, run.aborted ? 'aborted' : 'completed', Date.now() - startedAt));
-
-      return {
-        content: [{ type: 'text', text: buildResultEnvelope(run.interactions, boundaryNonce).content }],
-        details,
-      };
     },
     renderCall() {
       return new Container();

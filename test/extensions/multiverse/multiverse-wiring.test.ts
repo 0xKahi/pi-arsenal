@@ -4,7 +4,7 @@ import type { ConfigProvider } from '../../../src/config/config-loader.ts';
 import { SUBAGENT_IDENTITY_CUSTOM_TYPE } from '../../../src/extensions/multiverse/agents/session-identity.ts';
 import { registerMultiverse } from '../../../src/extensions/multiverse/multiverse.extension.ts';
 import { PARENT_AGENT_CUSTOM_TYPE } from '../../../src/extensions/multiverse/orchestrator/parent-agent.ts';
-import { recoverSpawnManifests } from '../../../src/extensions/multiverse/tools/spawn/spawn-manifest.ts';
+import { SPAWN_MANIFEST_CUSTOM_TYPE, type SpawnManifest } from '../../../src/extensions/multiverse/tools/spawn/spawn-manifest.ts';
 import { SpawnProgress } from '../../../src/extensions/multiverse/tools/spawn/spawn-progress.ts';
 import { MultiverseConfigSchema } from '../../../src/schemas/multiverse.config.schema.ts';
 import { childInteraction } from './interaction-fixture.ts';
@@ -82,7 +82,9 @@ describe('spawn manifest persistence', () => {
       runtime.ctx,
     );
 
-    const manifests = recoverSpawnManifests(runtime.entries as never);
+    const manifests = runtime.entries.flatMap(entry =>
+      entry.type === 'custom' && entry.customType === SPAWN_MANIFEST_CUSTOM_TYPE ? [entry.data as SpawnManifest] : [],
+    );
     expect(manifests).toHaveLength(1);
     expect(manifests[0]?.outcome).toBe('completed');
     expect(manifests[0]?.tasks[0]?.childSessionId).toBe('child-1');
@@ -98,7 +100,6 @@ describe('parent agent restoration', () => {
   it('restores a saved preference without appending another entry', () => {
     const selection = customEntry(PARENT_AGENT_CUSTOM_TYPE, { version: 1, agent: 'megamind' });
     const runtime = setup([selection]);
-    expect(runtime.activation.parentAgentState.getPreferred()).toBe('megamind');
     expect(runtime.activation.parentAgentState.getActive()).toBe('megamind');
     expect(runtime.activeTools()).toContain('spawn');
     expect(runtime.entries).toEqual([selection]);
@@ -108,7 +109,6 @@ describe('parent agent restoration', () => {
     const runtime = setup([childIdentityEntry, customEntry(PARENT_AGENT_CUSTOM_TYPE, { version: 1, agent: 'megamind' })]);
 
     expect(runtime.activation.roleState.get().kind).toBe('child');
-    expect(runtime.activation.parentAgentState.getPreferred()).toBe('default');
     expect(runtime.activation.parentAgentState.getActive()).toBe('default');
     expect(runtime.activeTools()).not.toContain('spawn');
   });

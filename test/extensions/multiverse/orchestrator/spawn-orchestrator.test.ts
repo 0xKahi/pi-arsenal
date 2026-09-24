@@ -206,6 +206,22 @@ describe('runSpawn', () => {
     expect(result.interactions[0]?.error).toContain('No usable model candidate');
   });
 
+  it('preserves the resolved agent on an aborted continuation placeholder', async () => {
+    const state = harness();
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await runSpawn(
+      { context: 'shared context', tasks: [{ action: 'continue', childSessionId: 'child-9', task: 'follow up' }] },
+      makeDependencies(state, {
+        resolveContinuation: () => childInteraction({ agent: 'explorer' }),
+      }),
+      { signal: controller.signal },
+    );
+
+    expect(result.interactions[0]).toMatchObject({ agent: 'explorer', status: 'aborted' });
+  });
+
   it('marks queued tasks aborted while preserving already completed entries', async () => {
     const state = harness();
     const controller = new AbortController();
@@ -247,6 +263,64 @@ describe('runSpawn', () => {
     expect(snapshots[0]).toBe('fixer task 1:queued');
     expect(snapshots).toContain('fixer task 1:waiting');
     expect(snapshots.at(-1)).toBe('fixer task 1:replied');
+  });
+
+  it('resolves a continuation target once and branches from that record', async () => {
+    const state = harness();
+    let lookups = 0;
+    const checkpoints: Array<string | null | undefined> = [];
+
+    const result = await runSpawn(
+      { context: 'shared context', tasks: [{ action: 'continue', childSessionId: 'child-9', task: 'next' }] },
+      makeDependencies(
+        state,
+        {
+          resolveContinuation: () => {
+            lookups++;
+            return childInteraction({ agent: 'fixer', checkpointAfter: 'prior-leaf' });
+          },
+        },
+        async input => {
+          checkpoints.push(input.checkpoint);
+          return outcome();
+        },
+      ),
+    );
+
+    expect(lookups).toBe(1);
+    expect(checkpoints).toEqual(['prior-leaf']);
+    expect(result.interactions[0]?.status).toBe('success');
+  });
+
+  it('does not publish progress for streamed token events', async () => {
+    const state = harness();
+    let published = 0;
+    const token = { type: 'message_update', message: { role: 'assistant', content: [] } } as never;
+
+    await runSpawn(
+      { context: 'shared context', tasks: [{ action: 'create', agent: 'fixer', task: 'x' }] },
+      makeDependencies(state, {}, async () => outcome()),
+      { onProgress: () => void published++ },
+    );
+    const baseline = published;
+
+    published = 0;
+    await runSpawn(
+      { context: 'shared context', tasks: [{ action: 'create', agent: 'fixer', task: 'x' }] },
+      makeDependencies(state, {
+        runtime: {
+          run: async (input: RunChildInteractionInput) => {
+            for (let i = 0; i < 100; i++) input.onEvent?.(token);
+            input.onEvent?.({ type: 'tool_execution_start', toolCallId: '1', toolName: 'read', args: {} } as never);
+            return outcome();
+          },
+        } as unknown as ChildRuntime,
+      }),
+      { onProgress: () => void published++ },
+    );
+
+    // 100 token events add nothing; only the tool start adds one publish.
+    expect(published).toBe(baseline + 1);
   });
 
   it('allows only one managed writer per child within a call', async () => {

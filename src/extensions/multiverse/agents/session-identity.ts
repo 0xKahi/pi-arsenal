@@ -1,8 +1,9 @@
 import type { SessionEntry, SessionManager } from '@earendil-works/pi-coding-agent';
 import { z } from 'zod';
+import { SUBAGENT_IDENTITY_CUSTOM_TYPE, SUBAGENT_IDENTITY_VERSION } from '../constants.ts';
 
-export const SUBAGENT_IDENTITY_CUSTOM_TYPE = 'arsenal-subagent';
-export const SUBAGENT_IDENTITY_VERSION = 1 as const;
+// Re-exported, never redeclared: durable entry types have one declared source in constants.ts.
+export { SUBAGENT_IDENTITY_CUSTOM_TYPE, SUBAGENT_IDENTITY_VERSION };
 
 export interface SubagentIdentity {
   version: typeof SUBAGENT_IDENTITY_VERSION;

@@ -3,10 +3,8 @@ import type { ModalComponentFactory, ModalTab } from '../../../libs/modal';
 import { fitLine, ListTab, ModalDialog, presentModal, VimNavigationScheme } from '../../../libs/modal';
 import type { SessionRole } from '../agents/session-role-state.ts';
 import type { PresetSelection } from '../agents/subagent-model-resolver.ts';
-import type { ParentAgent } from '../orchestrator/parent-agent.ts';
+import { PARENT_AGENTS, type ParentAgent } from '../orchestrator/parent-agent.ts';
 import { type MultiverseAgentPresetTabState, PresetsTab } from './multiverse-agent-preset-tab.ts';
-
-const PARENT_AGENTS: readonly ParentAgent[] = ['default', 'megamind'];
 
 export type MultiverseModalResult =
   | { action: 'close' }

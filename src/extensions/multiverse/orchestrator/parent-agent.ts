@@ -1,8 +1,9 @@
 import type { SessionEntry } from '@earendil-works/pi-coding-agent';
 import { z } from 'zod';
+import { PARENT_AGENT_CUSTOM_TYPE, PARENT_AGENT_VERSION } from '../constants.ts';
 
-export const PARENT_AGENT_CUSTOM_TYPE = 'arsenal-parent-agent';
-export const PARENT_AGENT_VERSION = 1 as const;
+// Re-exported, never redeclared: durable entry types have one declared source in constants.ts.
+export { PARENT_AGENT_CUSTOM_TYPE, PARENT_AGENT_VERSION };
 export const PARENT_AGENTS = ['default', 'megamind'] as const;
 export type ParentAgent = (typeof PARENT_AGENTS)[number];
 
@@ -28,27 +29,23 @@ function restoreParentAgent(entries: readonly SessionEntry[], configuredDefault:
 }
 
 export class ParentAgentState {
-  private preferred: ParentAgent = 'default';
   private active: ParentAgent = 'default';
 
+  /** Returns the saved preference; the caller decides whether it is eligible to become active. */
   restore(entries: readonly SessionEntry[], configuredDefault: ParentAgent): ParentAgent {
-    this.preferred = restoreParentAgent(entries, configuredDefault);
-    this.active = this.preferred;
-    return this.preferred;
+    const preferred = restoreParentAgent(entries, configuredDefault);
+    this.active = preferred;
+    return preferred;
   }
 
+  /** Persists an explicit switch; the durable entry is the only record of the preference. */
   select(agent: ParentAgent, append: (customType: string, data: ParentAgentSelection) => void): void {
     const selection = SelectionSchema.parse({ version: PARENT_AGENT_VERSION, agent });
     append(PARENT_AGENT_CUSTOM_TYPE, selection);
-    this.preferred = agent;
   }
 
   setActive(agent: ParentAgent): void {
     this.active = agent;
-  }
-
-  getPreferred(): ParentAgent {
-    return this.preferred;
   }
 
   getActive(): ParentAgent {

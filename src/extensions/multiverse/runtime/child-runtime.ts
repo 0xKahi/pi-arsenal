@@ -16,6 +16,8 @@ import type { ChildInteractionStatus, ChildTelemetry } from '../results/child-in
 
 type CreateSessionOptions = NonNullable<Parameters<typeof createAgentSession>[0]>;
 type DefaultResourceLoaderOptions = ConstructorParameters<typeof DefaultResourceLoader>[0];
+type AgentEndEvent = Extract<AgentSessionEvent, { type: 'agent_end' }>;
+type AssistantMessage = Extract<AgentEndEvent['messages'][number], { role: 'assistant' }>;
 
 /** `ThinkingLevel` is not exported from the SDK root, so it is derived from the session factory. */
 export type ChildThinkingLevel = NonNullable<CreateSessionOptions['thinkingLevel']>;
@@ -177,8 +179,14 @@ export class ChildRuntime {
       runtime.session.dispose();
     }
 
-    const text = ChildRuntime.lastAssistantText(events);
-    if (status === 'success' && text === '' && !ChildRuntime.hasAgentEnd(events)) {
+    const assistant = ChildRuntime.lastAssistantMessage(events);
+    const text = ChildRuntime.assistantText(assistant);
+    if (status === 'success' && assistant?.stopReason === 'error') {
+      status = 'failure';
+      error ??= assistant.errorMessage || 'The child model request failed.';
+    } else if (status === 'success' && assistant?.stopReason === 'aborted') {
+      status = 'aborted';
+    } else if (status === 'success' && text === '' && !ChildRuntime.hasAgentEnd(events)) {
       status = 'failure';
       error ??= 'The child produced no assistant response.';
     }
@@ -254,19 +262,22 @@ export class ChildRuntime {
     return events.some(event => event.type === 'agent_end');
   }
 
-  private static lastAssistantText(events: readonly AgentSessionEvent[]): string {
+  private static lastAssistantMessage(events: readonly AgentSessionEvent[]): AssistantMessage | undefined {
     for (let index = events.length - 1; index >= 0; index--) {
       const event = events[index];
       if (event?.type !== 'agent_end') continue;
-      const assistant = [...event.messages].reverse().find(message => message.role === 'assistant');
-      const content = assistant?.content;
-      if (!Array.isArray(content)) continue;
-      return content
-        .filter((item): item is Extract<typeof item, { type: 'text' }> => item.type === 'text')
-        .map(item => item.text)
-        .join('\n');
+      return [...event.messages].reverse().find(message => message.role === 'assistant');
     }
-    return '';
+    return undefined;
+  }
+
+  private static assistantText(assistant: AssistantMessage | undefined): string {
+    const content = assistant?.content;
+    if (!Array.isArray(content)) return '';
+    return content
+      .filter((item): item is Extract<typeof item, { type: 'text' }> => item.type === 'text')
+      .map(item => item.text)
+      .join('\n');
   }
 
   private static collectTelemetry(session: { getSessionStats: () => unknown }, startedAt: number): ChildTelemetry {

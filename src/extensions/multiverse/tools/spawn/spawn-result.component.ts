@@ -200,12 +200,10 @@ export class SpawnResultComponent implements Component {
   }
 
   private renderFooter(safeWidth: number): string {
-    const counts = { replied: 0, failed: 0, running: 0, queued: 0 };
+    const counts = { replied: 0, failed: 0 };
     for (const row of this.rows) {
       if (row.phase === 'replied') counts.replied += 1;
       else if (row.phase === 'failed') counts.failed += 1;
-      else if (row.phase === 'queued') counts.queued += 1;
-      else counts.running += 1;
     }
     const parts: string[] = [];
     if (counts.replied > 0) parts.push(`${counts.replied} ${counts.replied === 1 ? 'reply' : 'replies'}`);
