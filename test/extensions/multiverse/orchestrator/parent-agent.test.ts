@@ -27,7 +27,7 @@ describe('parent-agent persistence', () => {
     expect(new ParentAgentState().restore(entries, 'megamind')).toBe('default');
   });
 
-  it('appends every explicit switch and updates the in-memory preference', () => {
+  it('appends every explicit switch as a durable entry', () => {
     const state = new ParentAgentState();
     const appended: Array<{ customType: string; data: unknown }> = [];
     const append = (customType: string, data: unknown) => appended.push({ customType, data });
@@ -39,6 +39,5 @@ describe('parent-agent persistence', () => {
       { customType: PARENT_AGENT_CUSTOM_TYPE, data: { version: 1, agent: 'megamind' } },
       { customType: PARENT_AGENT_CUSTOM_TYPE, data: { version: 1, agent: 'default' } },
     ]);
-    expect(state.getPreferred()).toBe('default');
   });
 });

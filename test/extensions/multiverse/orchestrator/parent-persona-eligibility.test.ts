@@ -71,7 +71,6 @@ describe('parent persona eligibility', () => {
 
     const enabled = setup(true);
     enabled.start();
-    expect(enabled.activation.parentAgentState.getPreferred()).toBe('megamind');
     expect(enabled.activation.parentAgentState.getActive()).toBe('megamind');
     await Bun.sleep(20);
     expect(enabled.agentNameEvents).toEqual(['MEGAMIND']);

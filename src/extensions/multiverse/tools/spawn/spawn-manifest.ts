@@ -86,33 +86,10 @@ export class SpawnManifestWriter {
     this.dispatched = true;
   }
 
-  hasAppended(): boolean {
-    return this.appended;
-  }
-
   appendOnce(sink: ManifestSink, manifest: SpawnManifest): void {
     if (!this.dispatched) return;
     if (this.appended) throw new Error(`Spawn already appended its ${SPAWN_MANIFEST_CUSTOM_TYPE} manifest.`);
     this.appended = true;
     sink(SPAWN_MANIFEST_CUSTOM_TYPE, manifest);
   }
-}
-
-// --- recovery ----------------------------------------------------------
-
-export function isSpawnManifest(value: unknown): value is SpawnManifest {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const candidate = value as SpawnManifest;
-  return (
-    candidate.version === SPAWN_MANIFEST_VERSION &&
-    (candidate.outcome === 'completed' || candidate.outcome === 'aborted') &&
-    Array.isArray(candidate.tasks)
-  );
-}
-
-/** Manifests stay out of model context but remain recoverable from stored session entries. */
-export function recoverSpawnManifests(entries: ReadonlyArray<{ type?: string; customType?: string; data?: unknown }>): SpawnManifest[] {
-  return entries
-    .filter(entry => entry.type === 'custom' && entry.customType === SPAWN_MANIFEST_CUSTOM_TYPE && isSpawnManifest(entry.data))
-    .map(entry => entry.data as SpawnManifest);
 }

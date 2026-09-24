@@ -265,6 +265,33 @@ describe('runSpawn', () => {
     expect(snapshots.at(-1)).toBe('fixer task 1:replied');
   });
 
+  it('resolves a continuation target once and branches from that record', async () => {
+    const state = harness();
+    let lookups = 0;
+    const checkpoints: Array<string | null | undefined> = [];
+
+    const result = await runSpawn(
+      { context: 'shared context', tasks: [{ action: 'continue', childSessionId: 'child-9', task: 'next' }] },
+      makeDependencies(
+        state,
+        {
+          resolveContinuation: () => {
+            lookups++;
+            return childInteraction({ agent: 'fixer', checkpointAfter: 'prior-leaf' });
+          },
+        },
+        async input => {
+          checkpoints.push(input.checkpoint);
+          return outcome();
+        },
+      ),
+    );
+
+    expect(lookups).toBe(1);
+    expect(checkpoints).toEqual(['prior-leaf']);
+    expect(result.interactions[0]?.status).toBe('success');
+  });
+
   it('does not publish progress for streamed token events', async () => {
     const state = harness();
     let published = 0;

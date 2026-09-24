@@ -4,9 +4,9 @@ import { CHILD_INTERACTION_VERSION } from '../constants.ts';
 import { type ChildInteraction, capOutput, createInteractionId, resolveCheckpointAfter } from '../results/child-interaction.ts';
 import type { ChildAdmissionRegistry } from '../runtime/child-admission.ts';
 import { ChildRuntime, type ChildThinkingLevel, type ModelResolutionRegistry, type SubagentModelConfig } from '../runtime/child-runtime.ts';
-import type { ChildSessionHandle, ChildSessionRepository } from '../runtime/child-session-repository.ts';
+import type { ChildSessionRepository } from '../runtime/child-session-repository.ts';
 import { runWithGlobalConcurrency } from '../runtime/task-scheduler.ts';
-import { buildChildPrompt, describeTask, type SpawnInput, type SpawnTask } from '../tools/spawn/spawn.schema.ts';
+import { buildChildPrompt, describeTask, type SpawnContinueTask, type SpawnInput, type SpawnTask } from '../tools/spawn/spawn.schema.ts';
 import { SpawnProgress } from '../tools/spawn/spawn-progress.ts';
 
 export interface SpawnOrchestratorDependencies {
@@ -104,8 +104,9 @@ interface RunTaskInput {
 
 async function runTask(context: RunTaskInput): Promise<ChildInteraction> {
   const { task, index, dependencies } = context;
-  const agent = task.action === 'create' ? task.agent : (dependencies.resolveContinuation(task.childSessionId)?.agent ?? undefined);
-  if (!agent) return placeholderInteraction(task, index, 'failure', unreachableChild((task as { childSessionId: string }).childSessionId));
+  const target = resolveTarget(task, dependencies);
+  if (!target) return placeholderInteraction(task, index, 'failure', unreachableChild((task as SpawnContinueTask).childSessionId));
+  const { agent, checkpoint } = target;
   context.progress.resolveAgent(index, agent);
 
   const resolved = dependencies.getSubAgent(agent);
@@ -121,17 +122,10 @@ async function runTask(context: RunTaskInput): Promise<ChildInteraction> {
   if (!model.success) return placeholderInteraction(task, index, 'failure', model.error, agent);
   const thinkingLevel = ChildRuntime.resolveReasoning(model.model, dependencies.subagentReasoning(agent), dependencies.thinkingLevel);
 
-  let handle: ChildSessionHandle;
-  let checkpoint: string | null | undefined;
-  if (task.action === 'create') {
-    handle = dependencies.repository.create(dependencies.cwd, dependencies.parentSessionId, agent);
-    checkpoint = undefined;
-  } else {
-    const previous = dependencies.resolveContinuation(task.childSessionId);
-    if (!previous) return placeholderInteraction(task, index, 'failure', unreachableChild(task.childSessionId), agent);
-    handle = dependencies.repository.open(dependencies.cwd, dependencies.parentSessionId, task.childSessionId);
-    checkpoint = previous.checkpointAfter;
-  }
+  const handle =
+    task.action === 'create'
+      ? dependencies.repository.create(dependencies.cwd, dependencies.parentSessionId, agent)
+      : dependencies.repository.open(dependencies.cwd, dependencies.parentSessionId, task.childSessionId);
 
   // One managed writer per child for the whole interaction.
   const release = dependencies.admission.acquire(handle.sessionId);
@@ -170,6 +164,16 @@ async function runTask(context: RunTaskInput): Promise<ChildInteraction> {
   } finally {
     release();
   }
+}
+
+/**
+ * Resolves who runs a task and where it branches from, reading a continuation target once so the
+ * agent and checkpoint always come from the same record. A create keeps the new child's leaf.
+ */
+function resolveTarget(task: SpawnTask, dependencies: SpawnOrchestratorDependencies): { agent: string; checkpoint?: string | null } | undefined {
+  if (task.action === 'create') return { agent: task.agent };
+  const previous = dependencies.resolveContinuation(task.childSessionId);
+  return previous?.agent ? { agent: previous.agent, checkpoint: previous.checkpointAfter } : undefined;
 }
 
 function unreachableChild(childSessionId: string): string {
