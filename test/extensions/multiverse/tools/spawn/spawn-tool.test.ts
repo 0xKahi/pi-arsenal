@@ -74,6 +74,90 @@ describe('createSpawnTool', () => {
     expect(appended).toEqual([]);
   });
 
+  it('serializes concurrent spawn calls in FIFO order', async () => {
+    let resolveFirst!: () => void;
+    const firstRun = new Promise<void>(resolve => {
+      resolveFirst = resolve;
+    });
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const started: string[] = [];
+    const tool = createSpawnTool(
+      host({
+        run: async input => {
+          const name = input.context;
+          started.push(name);
+          inFlight++;
+          maxInFlight = Math.max(maxInFlight, inFlight);
+          if (name === 'first') await firstRun;
+          inFlight--;
+          return { interactions: [childInteraction({ body: name })], progress: new SpawnProgress([]), aborted: false };
+        },
+      }),
+    );
+
+    const first = tool.execute('call-1', { ...validInput, context: 'first' } as never, undefined, undefined, ctx);
+    const second = tool.execute('call-2', { ...validInput, context: 'second' } as never, undefined, undefined, ctx);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(started).toEqual(['first']);
+    resolveFirst();
+    await Promise.all([first, second]);
+
+    expect(maxInFlight).toBe(1);
+    expect(started).toEqual(['first', 'second']);
+  });
+
+  it('abandons an aborted waiter without blocking later calls or writing its manifest', async () => {
+    let resolveFirst!: () => void;
+    const firstRun = new Promise<void>(resolve => {
+      resolveFirst = resolve;
+    });
+    const appended: string[] = [];
+    const started: string[] = [];
+    const tool = createSpawnTool(
+      host({
+        appendManifest: (_type, manifest) => appended.push(manifest.context),
+        run: async input => {
+          started.push(input.context);
+          if (input.context === 'first') await firstRun;
+          return { interactions: [childInteraction({ body: input.context })], progress: new SpawnProgress([]), aborted: false };
+        },
+      }),
+    );
+    const first = tool.execute('call-1', { ...validInput, context: 'first' } as never, undefined, undefined, ctx);
+    const abortController = new AbortController();
+    const second = tool.execute('call-2', { ...validInput, context: 'aborted' } as never, abortController.signal, undefined, ctx);
+    const third = tool.execute('call-3', { ...validInput, context: 'third' } as never, undefined, undefined, ctx);
+    abortController.abort();
+    await expect(second).rejects.toThrow('Spawn aborted before dispatch');
+    resolveFirst();
+    await Promise.all([first, third]);
+
+    expect(started).toEqual(['first', 'third']);
+    expect(appended).toEqual(['first', 'third']);
+  });
+
+  it('rejects validation failures without waiting for an active spawn', async () => {
+    let resolveRun!: () => void;
+    const pending = new Promise<void>(resolve => {
+      resolveRun = resolve;
+    });
+    const tool = createSpawnTool(
+      host({
+        run: async () => {
+          await pending;
+          return { interactions: [], progress: new SpawnProgress([]), aborted: false };
+        },
+      }),
+    );
+    const active = tool.execute('call-1', validInput as never, undefined, undefined, ctx);
+    await Promise.resolve();
+
+    await expect(tool.execute('call-2', { context: '', tasks: [] } as never, undefined, undefined, ctx)).rejects.toThrow('rejected before dispatch');
+    resolveRun();
+    await active;
+  });
+
   it('appends exactly one manifest after dispatch', async () => {
     const appended: Array<{ type: string; context: string }> = [];
     const tool = createSpawnTool(host({ appendManifest: (type, manifest) => appended.push({ type, context: manifest.context }) }));

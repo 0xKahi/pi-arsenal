@@ -206,6 +206,22 @@ describe('runSpawn', () => {
     expect(result.interactions[0]?.error).toContain('No usable model candidate');
   });
 
+  it('preserves the resolved agent on an aborted continuation placeholder', async () => {
+    const state = harness();
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await runSpawn(
+      { context: 'shared context', tasks: [{ action: 'continue', childSessionId: 'child-9', task: 'follow up' }] },
+      makeDependencies(state, {
+        resolveContinuation: () => childInteraction({ agent: 'explorer' }),
+      }),
+      { signal: controller.signal },
+    );
+
+    expect(result.interactions[0]).toMatchObject({ agent: 'explorer', status: 'aborted' });
+  });
+
   it('marks queued tasks aborted while preserving already completed entries', async () => {
     const state = harness();
     const controller = new AbortController();

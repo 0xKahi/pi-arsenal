@@ -76,7 +76,15 @@ export async function runSpawn(
     const task = input.tasks[index] as SpawnTask;
     const status = result.status === 'aborted' ? 'aborted' : 'failure';
     progress.settle(index, status, result.status === 'rejected' ? result.error : undefined);
-    return placeholderInteraction(task, index, status, result.status === 'rejected' ? result.error : 'Aborted before dispatch.');
+    let agent: string | undefined;
+    if (task.action === 'continue') {
+      try {
+        agent = dependencies.resolveContinuation(task.childSessionId)?.agent;
+      } catch {
+        // A resolver failure must not prevent other tasks from settling.
+      }
+    }
+    return placeholderInteraction(task, index, status, result.status === 'rejected' ? result.error : 'Aborted before dispatch.', agent);
   });
   publish();
 

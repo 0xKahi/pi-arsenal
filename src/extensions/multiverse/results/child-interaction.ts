@@ -116,7 +116,15 @@ export function latestChildInteraction(entries: readonly SessionEntry[], childSe
 
     for (let index = details.interactions.length - 1; index >= 0; index--) {
       const candidate = details.interactions[index];
-      if (isChildInteraction(candidate) && candidate.childSessionId === childSessionId) return candidate;
+      // Placeholders never ran against a child session and must not shadow usable history.
+      if (
+        isChildInteraction(candidate) &&
+        candidate.childSessionId === childSessionId &&
+        candidate.childSessionFile &&
+        candidate.checkpointAfter !== null
+      ) {
+        return candidate;
+      }
     }
   }
   return undefined;

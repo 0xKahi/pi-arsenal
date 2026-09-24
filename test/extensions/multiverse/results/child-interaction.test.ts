@@ -116,6 +116,20 @@ describe('latestChildInteraction', () => {
     expect(latestChildInteraction(entries, 'child-2')?.checkpointAfter).toBe('other');
   });
 
+  it('skips placeholders and keeps searching for a real interaction', () => {
+    const real = interaction('child-1', 'checkpoint-1', 'success');
+    const placeholder = childInteraction({
+      childSessionId: 'child-1',
+      childSessionFile: '',
+      checkpointAfter: null,
+      agent: 'unknown',
+    });
+    const entries = [resultEntry('real', spawnDetails([real])), resultEntry('placeholder', spawnDetails([placeholder]))];
+
+    expect(latestChildInteraction(entries, 'child-1')).toBe(real);
+    expect(latestChildInteraction([resultEntry('placeholder', spawnDetails([placeholder]))], 'child-1')).toBeUndefined();
+  });
+
   it('returns undefined when the active branch has no usable interaction', () => {
     expect(latestChildInteraction([resultEntry('a', spawnDetails([interaction('other', 'x', 'success')]))], 'child-1')).toBeUndefined();
     expect(latestChildInteraction([resultEntry('x', spawnDetails([{ invalid: true }]))], 'child-1')).toBeUndefined();
