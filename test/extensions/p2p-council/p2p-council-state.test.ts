@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, jest, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { WebSocketServer } from 'ws';
+import { WebSocket, WebSocketServer } from 'ws';
 import { P2pCouncilState, type P2pCouncilStateDeps } from '../../../src/extensions/p2p-council/p2p-council-state';
-import { CouncilRegistry } from '../../../src/extensions/p2p-council/registry.util';
+import { CouncilRegistry, councilUrl } from '../../../src/extensions/p2p-council/registry.util';
 import { PathUtil } from '../../../src/utils/path.util';
 
 function makeDeps(overrides: Partial<P2pCouncilStateDeps> & { name: string; registry: CouncilRegistry }): P2pCouncilStateDeps {
@@ -51,6 +51,34 @@ describe('P2pCouncilState', () => {
     expect(host.getConnectionType()).toBe('host');
     expect(host.getCouncilName()).toBe('team-a');
     expect(registry.exists('team-a')).toBe(true);
+  });
+
+  test('host requires the council token and rejects Origin headers', async () => {
+    const host = spawn('secure-host');
+    await host.createCouncil('secure-council');
+    const entry = registry.read('secure-council');
+    if (!entry) throw new Error('missing entry');
+
+    const rejected = (url: string, headers?: Record<string, string>) =>
+      new Promise<boolean>(resolve => {
+        const socket = new WebSocket(url, { headers });
+        socket.on('open', () => {
+          socket.close();
+          resolve(false);
+        });
+        socket.on('error', () => resolve(true));
+      });
+
+    expect(await rejected(`ws://127.0.0.1:${entry.port}`)).toBe(true);
+    expect(await rejected(councilUrl(entry.port, 'wrong-token'))).toBe(true);
+    expect(await rejected(councilUrl(entry.port, entry.token), { Origin: 'https://example.com' })).toBe(true);
+
+    const valid = new WebSocket(councilUrl(entry.port, entry.token));
+    await new Promise<void>((resolve, reject) => {
+      valid.once('open', resolve);
+      valid.once('error', reject);
+    });
+    valid.close();
   });
 
   test('createCouncil rejects a name with a live registry entry', async () => {
@@ -142,6 +170,7 @@ describe('P2pCouncilState', () => {
       port: address.port,
       hostPid: process.pid,
       createdAt: new Date().toISOString(),
+      token: 'test-token',
     });
 
     expect(result).toEqual({ success: false, error: 'welcome handshake timed out' });
@@ -489,5 +518,6 @@ describe('P2pCouncilState', () => {
     expect(client.getCouncilName()).toBe('team-l');
     const promoted = registry.read('team-l');
     expect(promoted?.port).toBe(originalPort);
+    expect(promoted?.token).toBe(entry.token);
   }, 10000);
 });

@@ -312,7 +312,7 @@ describe('CouncilDetailLayer', () => {
     const layer = new CouncilDetailLayer(
       theme,
       tui as never,
-      { name: 'missing-council', port: 1, hostPid: process.pid, createdAt: new Date().toISOString() },
+      { name: 'missing-council', port: 1, hostPid: process.pid, createdAt: new Date().toISOString(), token: 'test-token' },
       viewer,
       () => {},
       connected => connectionChanges.push(connected),
@@ -337,7 +337,7 @@ describe('CouncilDetailLayer', () => {
     const layer = new CouncilDetailLayer(
       theme,
       tui as never,
-      { name: 'ghost-council', port: 1, hostPid: process.pid, createdAt: new Date().toISOString() },
+      { name: 'ghost-council', port: 1, hostPid: process.pid, createdAt: new Date().toISOString(), token: 'test-token' },
       viewer,
       () => {},
     );

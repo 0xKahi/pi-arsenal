@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { WebSocket } from 'ws';
@@ -9,6 +10,7 @@ export interface CouncilRegistryEntry {
   port: number;
   hostPid: number;
   createdAt: string;
+  token: string;
 }
 
 const PROBE_TIMEOUT_MS = 1500;
@@ -46,13 +48,14 @@ export class CouncilRegistry {
       const name = file.slice(0, -'.json'.length);
       const entry = this.read(name);
       if (entry) entries.push(entry);
+      else this.remove(name);
     }
     return entries;
   }
 
   /** Atomically write (create or replace) an entry via write-temp-then-rename. */
   public async write(entry: CouncilRegistryEntry): Promise<void> {
-    mkdirSync(this.dir.path, { recursive: true });
+    mkdirSync(this.dir.path, { recursive: true, mode: 0o700 });
     await Atomic.write({ filePath: this.entryPath(entry.name), data: entry });
   }
 
@@ -73,7 +76,22 @@ export class CouncilRegistry {
 function isCouncilRegistryEntry(value: unknown): value is CouncilRegistryEntry {
   if (value === null || typeof value !== 'object') return false;
   const v = value as Record<string, unknown>;
-  return typeof v.name === 'string' && typeof v.port === 'number' && typeof v.hostPid === 'number' && typeof v.createdAt === 'string';
+  return (
+    typeof v.name === 'string' &&
+    typeof v.port === 'number' &&
+    typeof v.hostPid === 'number' &&
+    typeof v.createdAt === 'string' &&
+    typeof v.token === 'string' &&
+    v.token.length > 0
+  );
+}
+
+export function generateCouncilToken(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+export function councilUrl(port: number, token: string): string {
+  return `ws://127.0.0.1:${port}/?token=${encodeURIComponent(token)}`;
 }
 
 /** Cheap liveness check: does a process with this pid currently exist? */
@@ -87,10 +105,10 @@ export function isPidAlive(pid: number): boolean {
 }
 
 /** Connect probe: does something answer a WebSocket handshake on this port? */
-export function probeCouncilPort(port: number, timeoutMs = PROBE_TIMEOUT_MS): Promise<boolean> {
+export function probeCouncilPort(port: number, token: string, timeoutMs = PROBE_TIMEOUT_MS): Promise<boolean> {
   return new Promise(resolve => {
     let settled = false;
-    const socket = new WebSocket(`ws://127.0.0.1:${port}`);
+    const socket = new WebSocket(councilUrl(port, token));
     const finish = (result: boolean) => {
       if (settled) return;
       settled = true;
@@ -116,7 +134,7 @@ export function probeCouncilPort(port: number, timeoutMs = PROBE_TIMEOUT_MS): Pr
  */
 export async function isEntryLive(entry: CouncilRegistryEntry): Promise<boolean> {
   if (!isPidAlive(entry.hostPid)) return false;
-  return probeCouncilPort(entry.port);
+  return probeCouncilPort(entry.port, entry.token);
 }
 
 /** List only entries that pass liveness validation, pruning stale ones from disk. */

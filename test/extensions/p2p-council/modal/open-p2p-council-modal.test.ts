@@ -72,7 +72,7 @@ describe('buildCouncilModalFactory', () => {
 
   test('lists live councils plus a "create new" row, and shows disconnected in the title', () => {
     const state = spawn('agent-a');
-    const entries: CouncilRegistryEntry[] = [{ name: 'team-a', port: 1234, hostPid: process.pid, createdAt: new Date().toISOString() }];
+    const entries: CouncilRegistryEntry[] = [{ name: 'team-a', port: 1234, hostPid: process.pid, createdAt: new Date().toISOString(), token: 'test-token' }];
     const results: P2pCouncilModalResult[] = [];
     const factory = buildCouncilModalFactory(state, entries);
     const dialog = factory(makeTui() as never, theme, keybindings, r => results.push(r), 'inline') as ModalDialog<P2pCouncilModalResult>;
@@ -216,8 +216,8 @@ describe('buildCouncilModalFactory', () => {
   test('vim navigation moves selection with j/k and Esc closes with {action: "close"}', () => {
     const state = spawn('agent-a');
     const entries: CouncilRegistryEntry[] = [
-      { name: 'team-a', port: 1, hostPid: process.pid, createdAt: new Date().toISOString() },
-      { name: 'team-b', port: 2, hostPid: process.pid, createdAt: new Date().toISOString() },
+      { name: 'team-a', port: 1, hostPid: process.pid, createdAt: new Date().toISOString(), token: 'test-token' },
+      { name: 'team-b', port: 2, hostPid: process.pid, createdAt: new Date().toISOString(), token: 'test-token' },
     ];
     const results: P2pCouncilModalResult[] = [];
     const factory = buildCouncilModalFactory(state, entries);
@@ -240,7 +240,7 @@ describe('buildCouncilModalFactory', () => {
     await state.createCouncil('team-a');
     const connected = registry.read('team-a');
     if (!connected) throw new Error('missing entry');
-    const other = { name: 'team-b', port: 2, hostPid: process.pid, createdAt: new Date().toISOString() };
+    const other = { name: 'team-b', port: 2, hostPid: process.pid, createdAt: new Date().toISOString(), token: 'test-token' };
     const recordingTheme = {
       fg: (color: string, text: string) => `[${color}]${text}[/${color}]`,
       bold: (text: string) => text,
@@ -276,7 +276,7 @@ describe('buildCouncilModalFactory', () => {
 
   test('confirming a council row pushes a detail layer instead of closing the dialog', () => {
     const state = spawn('agent-a');
-    const entries: CouncilRegistryEntry[] = [{ name: 'team-a', port: 1, hostPid: process.pid, createdAt: new Date().toISOString() }];
+    const entries: CouncilRegistryEntry[] = [{ name: 'team-a', port: 1, hostPid: process.pid, createdAt: new Date().toISOString(), token: 'test-token' }];
     const results: P2pCouncilModalResult[] = [];
     const factory = buildCouncilModalFactory(state, entries);
     const dialog = factory(makeTui() as never, theme, keybindings, r => results.push(r), 'inline') as ModalDialog<P2pCouncilModalResult>;

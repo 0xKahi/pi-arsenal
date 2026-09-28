@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { P2pInboundItem } from './communication-presentation';
 import {
@@ -32,7 +32,7 @@ import {
   safeParseP2pMessage,
   type WelcomeMsg,
 } from './protocol.types';
-import { CouncilRegistry, type CouncilRegistryEntry, isEntryLive } from './registry.util';
+import { CouncilRegistry, type CouncilRegistryEntry, councilUrl, generateCouncilToken, isEntryLive } from './registry.util';
 
 export type P2pConnectionType = 'host' | 'client' | 'disconnected';
 
@@ -87,6 +87,7 @@ export class P2pCouncilState {
   private selfName: string;
   private councilName: string | undefined;
   private councilPort: number | undefined;
+  private councilToken: string | undefined;
   private manuallyDisconnected = false;
 
   // Host-side
@@ -381,7 +382,7 @@ export class P2pCouncilState {
     if (existing) this.registry.remove(name);
 
     if (memberName) this.selfName = memberName;
-    return this.startHost(name, undefined);
+    return this.startHost(name, undefined, generateCouncilToken());
   }
 
   /** `memberName` overrides the registration name for this connection only. See `createCouncil`. */
@@ -389,7 +390,7 @@ export class P2pCouncilState {
     if (this.isConnected()) this.disconnect('manual');
     this.manuallyDisconnected = false;
     if (memberName) this.selfName = memberName;
-    const result = await this.connectAsClient(entry.name, entry.port);
+    const result = await this.connectAsClient(entry.name, entry.port, entry.token);
     if (!result.success) return result;
     return { success: true, councilName: entry.name };
   }
@@ -441,6 +442,7 @@ export class P2pCouncilState {
     this.connectionType = 'disconnected';
     this.councilName = undefined;
     this.councilPort = undefined;
+    this.councilToken = undefined;
     this.clientHostName = undefined;
     this.members.clear();
     this.statuses.clear();
@@ -461,9 +463,30 @@ export class P2pCouncilState {
 
   // ── Hosting ──────────────────────────────────────────────────────────────
 
-  private startHost(name: string, preferredPort: number | undefined): Promise<CreateCouncilResult> {
+  private startHost(name: string, preferredPort: number | undefined, token: string): Promise<CreateCouncilResult> {
     return new Promise(resolve => {
-      const server = new WebSocketServer({ port: preferredPort ?? 0, host: '127.0.0.1' });
+      const server = new WebSocketServer({
+        port: preferredPort ?? 0,
+        host: '127.0.0.1',
+        maxPayload: 8 * 1024 * 1024,
+        verifyClient: (info, callback) => {
+          const origin = info.origin ?? info.req.headers.origin;
+          if (origin !== undefined) {
+            callback(false, 401);
+            return;
+          }
+          let supplied: string | null = null;
+          try {
+            supplied = new URL(info.req.url ?? '/', 'http://127.0.0.1').searchParams.get('token');
+          } catch {
+            callback(false, 401);
+            return;
+          }
+          const expectedBuffer = Buffer.from(token);
+          const suppliedBuffer = Buffer.from(supplied ?? '');
+          callback(suppliedBuffer.length === expectedBuffer.length && timingSafeEqual(suppliedBuffer, expectedBuffer), 401);
+        },
+      });
 
       server.on('listening', () => {
         void (async () => {
@@ -479,6 +502,7 @@ export class P2pCouncilState {
           this.connectionType = 'host';
           this.councilName = name;
           this.councilPort = port;
+          this.councilToken = token;
           this.manuallyDisconnected = false;
           this.councilClients.clear();
           this.councilIdentities.clear();
@@ -486,7 +510,7 @@ export class P2pCouncilState {
           this.lastPushedKind = null;
           this.lastPushedTool = null;
 
-          await this.registry.write({ name, port, hostPid: process.pid, createdAt: new Date().toISOString() });
+          await this.registry.write({ name, port, hostPid: process.pid, createdAt: new Date().toISOString(), token });
           this.runtimeFor()?.notify(`council created: "${name}" (port=${port})`, 'info');
           this.emitChange();
           this.pushStatus(true);
@@ -663,9 +687,9 @@ export class P2pCouncilState {
 
   // ── Client connection ────────────────────────────────────────────────────
 
-  private connectAsClient(councilName: string, port: number): Promise<JoinCouncilResult> {
+  private connectAsClient(councilName: string, port: number, token: string): Promise<JoinCouncilResult> {
     return new Promise(resolve => {
-      const socket = new WebSocket(`ws://127.0.0.1:${port}`);
+      const socket = new WebSocket(councilUrl(port, token));
       let settled = false;
       let welcomed = false;
 
@@ -674,6 +698,7 @@ export class P2pCouncilState {
         this.connectionType = 'disconnected';
         this.councilName = undefined;
         this.councilPort = undefined;
+        this.councilToken = undefined;
         this.clientHostName = undefined;
         this.members.clear();
         this.statuses.clear();
@@ -707,6 +732,7 @@ export class P2pCouncilState {
         this.ws = socket;
         this.councilName = councilName;
         this.councilPort = port;
+        this.councilToken = token;
         const register: RegisterMsg = {
           type: 'register',
           name: this.selfName,
@@ -748,16 +774,18 @@ export class P2pCouncilState {
         if (wasClient) {
           const lostCouncilName = this.councilName;
           const lostPort = this.councilPort;
+          const lostToken = this.councilToken;
           this.connectionType = 'disconnected';
           this.councilName = undefined;
           this.councilPort = undefined;
+          this.councilToken = undefined;
           this.clientHostName = undefined;
           this.members.clear();
           this.statuses.clear();
           this.emitChange();
-          if (!this.manuallyDisconnected && lostCouncilName && lostPort) {
+          if (!this.manuallyDisconnected && lostCouncilName && lostPort && lostToken) {
             this.runtimeFor()?.notify(`Lost connection to council "${lostCouncilName}" - attempting promotion`, 'warning');
-            this.schedulePromotion(lostCouncilName, lostPort);
+            this.schedulePromotion(lostCouncilName, lostPort, lostToken);
           }
         }
       });
@@ -768,29 +796,29 @@ export class P2pCouncilState {
 
   // ── Promotion ────────────────────────────────────────────────────────────
 
-  private schedulePromotion(councilName: string, port: number): void {
+  private schedulePromotion(councilName: string, port: number, token: string): void {
     if (this.disposed || this.manuallyDisconnected || this.promotionTimer) return;
     const delay = PROMOTION_BASE_DELAY_MS + Math.random() * PROMOTION_JITTER_MS;
     this.promotionTimer = setTimeout(() => {
       this.promotionTimer = null;
       if (this.disposed || this.manuallyDisconnected || this.connectionType !== 'disconnected') return;
-      void this.attemptPromotion(councilName, port);
+      void this.attemptPromotion(councilName, port, token);
     }, delay);
   }
 
-  private async attemptPromotion(councilName: string, port: number): Promise<void> {
-    const hostResult = await this.startHost(councilName, port);
+  private async attemptPromotion(councilName: string, port: number, token: string): Promise<void> {
+    const hostResult = await this.startHost(councilName, port, token);
     if (hostResult.success) {
       this.runtimeFor()?.notify(`Promoted to host of council "${councilName}"`, 'info');
       return;
     }
     // Someone else won the race, or the port never frees up (rare). Retry as client.
-    const rejoin = await this.connectAsClient(councilName, port);
+    const rejoin = await this.connectAsClient(councilName, port, token);
     if (!rejoin.success) {
       setTimeout(
         () => {
           if (!this.disposed && !this.manuallyDisconnected && this.connectionType === 'disconnected') {
-            this.schedulePromotion(councilName, port);
+            this.schedulePromotion(councilName, port, token);
           }
         },
         RECONNECT_RETRY_MS + Math.random() * 1000,
@@ -802,7 +830,7 @@ export class P2pCouncilState {
 
   public peek(entry: CouncilRegistryEntry): Promise<PeekResponseMsg | undefined> {
     return new Promise(resolve => {
-      const socket = new WebSocket(`ws://127.0.0.1:${entry.port}`);
+      const socket = new WebSocket(councilUrl(entry.port, entry.token));
       let settled = false;
       const finish = (result: PeekResponseMsg | undefined) => {
         if (settled) return;

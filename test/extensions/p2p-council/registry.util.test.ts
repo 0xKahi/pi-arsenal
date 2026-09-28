@@ -20,15 +20,15 @@ describe('CouncilRegistry', () => {
   });
 
   test('write then read round-trips an entry', async () => {
-    await registry.write({ name: 'frontend', port: 12345, hostPid: process.pid, createdAt: new Date().toISOString() });
+    await registry.write({ name: 'frontend', port: 12345, hostPid: process.pid, createdAt: new Date().toISOString(), token: 'test-token' });
     const entry = registry.read('frontend');
     expect(entry?.name).toBe('frontend');
     expect(entry?.port).toBe(12345);
   });
 
   test('list returns all written entries', async () => {
-    await registry.write({ name: 'a', port: 1, hostPid: process.pid, createdAt: new Date().toISOString() });
-    await registry.write({ name: 'b', port: 2, hostPid: process.pid, createdAt: new Date().toISOString() });
+    await registry.write({ name: 'a', port: 1, hostPid: process.pid, createdAt: new Date().toISOString(), token: 'test-token' });
+    await registry.write({ name: 'b', port: 2, hostPid: process.pid, createdAt: new Date().toISOString(), token: 'test-token' });
     const names = registry
       .list()
       .map(e => e.name)
@@ -37,7 +37,7 @@ describe('CouncilRegistry', () => {
   });
 
   test('remove deletes an entry and is safe when already absent', async () => {
-    await registry.write({ name: 'a', port: 1, hostPid: process.pid, createdAt: new Date().toISOString() });
+    await registry.write({ name: 'a', port: 1, hostPid: process.pid, createdAt: new Date().toISOString(), token: 'test-token' });
     registry.remove('a');
     expect(registry.exists('a')).toBe(false);
     expect(() => registry.remove('a')).not.toThrow();
@@ -45,8 +45,16 @@ describe('CouncilRegistry', () => {
 
   test('exists reflects presence', async () => {
     expect(registry.exists('missing')).toBe(false);
-    await registry.write({ name: 'present', port: 1, hostPid: process.pid, createdAt: new Date().toISOString() });
+    await registry.write({ name: 'present', port: 1, hostPid: process.pid, createdAt: new Date().toISOString(), token: 'test-token' });
     expect(registry.exists('present')).toBe(true);
+  });
+
+  test('list prunes token-less registry entries', () => {
+    const file = join(dir, 'old.json');
+    writeFileSync(file, JSON.stringify({ name: 'old', port: 12345, hostPid: process.pid, createdAt: new Date().toISOString() }));
+
+    expect(registry.list()).toEqual([]);
+    expect(existsSync(file)).toBe(false);
   });
 
   test('does not discover or migrate entries from the legacy p2p-hubs directory', () => {
@@ -97,23 +105,23 @@ describe('isEntryLive / listLiveCouncils', () => {
   });
 
   test('a live council with a reachable port and alive pid passes validation', async () => {
-    const entry = { name: 'live', port, hostPid: process.pid, createdAt: new Date().toISOString() };
+    const entry = { name: 'live', port, hostPid: process.pid, createdAt: new Date().toISOString(), token: 'test-token' };
     expect(await isEntryLive(entry)).toBe(true);
   });
 
   test('a dead-pid entry fails validation without probing the port', async () => {
-    const entry = { name: 'dead', port, hostPid: 999_999, createdAt: new Date().toISOString() };
+    const entry = { name: 'dead', port, hostPid: 999_999, createdAt: new Date().toISOString(), token: 'test-token' };
     expect(await isEntryLive(entry)).toBe(false);
   });
 
   test('an unreachable port fails validation even with a live pid', async () => {
-    const entry = { name: 'unreachable', port: 1, hostPid: process.pid, createdAt: new Date().toISOString() };
+    const entry = { name: 'unreachable', port: 1, hostPid: process.pid, createdAt: new Date().toISOString(), token: 'test-token' };
     expect(await isEntryLive(entry)).toBe(false);
   });
 
   test('listLiveCouncils prunes stale entries and keeps live ones', async () => {
-    await registry.write({ name: 'live', port, hostPid: process.pid, createdAt: new Date().toISOString() });
-    await registry.write({ name: 'stale', port: 1, hostPid: 999_999, createdAt: new Date().toISOString() });
+    await registry.write({ name: 'live', port, hostPid: process.pid, createdAt: new Date().toISOString(), token: 'test-token' });
+    await registry.write({ name: 'stale', port: 1, hostPid: 999_999, createdAt: new Date().toISOString(), token: 'test-token' });
 
     const live = await listLiveCouncils(registry);
     expect(live.map(e => e.name)).toEqual(['live']);
