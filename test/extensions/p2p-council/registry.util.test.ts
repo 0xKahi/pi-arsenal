@@ -130,13 +130,17 @@ describe('isEntryLive / listLiveCouncils', () => {
     expect(await isEntryLive(entry)).toBe(false);
   });
 
-  test('listLiveCouncils prunes stale entries and keeps live ones', async () => {
-    await registry.write({ name: 'live', port, hostPid: process.pid, createdAt: new Date().toISOString(), token: 'test-token' });
-    await registry.write({ name: 'stale', port: 1, hostPid: 999_999, createdAt: new Date().toISOString(), token: 'test-token' });
+  test('listLiveCouncils prunes stale entries and preserves live-entry order', async () => {
+    const createdAt = new Date().toISOString();
+    await registry.write({ name: 'live', port, hostPid: process.pid, createdAt, token: 'test-token' });
+    await registry.write({ name: 'stale', port: 1, hostPid: 999_999, createdAt, token: 'test-token' });
+    await registry.write({ name: 'also-live', port, hostPid: process.pid, createdAt, token: 'test-token' });
+    const expectedLiveOrder = registry.list().filter(entry => entry.name !== 'stale').map(entry => entry.name);
 
     const live = await listLiveCouncils(registry);
-    expect(live.map(e => e.name)).toEqual(['live']);
+    expect(live.map(e => e.name)).toEqual(expectedLiveOrder);
     expect(registry.exists('stale')).toBe(false);
     expect(registry.exists('live')).toBe(true);
+    expect(registry.exists('also-live')).toBe(true);
   });
 });

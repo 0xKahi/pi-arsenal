@@ -161,13 +161,10 @@ export async function isEntryLive(entry: CouncilRegistryEntry): Promise<boolean>
 /** List only entries that pass liveness validation, pruning stale ones from disk. */
 export async function listLiveCouncils(registry: CouncilRegistry): Promise<CouncilRegistryEntry[]> {
   const all = registry.list();
-  const live: CouncilRegistryEntry[] = [];
-  for (const entry of all) {
-    if (await isEntryLive(entry)) {
-      live.push(entry);
-    } else {
-      registry.remove(entry.name);
-    }
-  }
-  return live;
+  const results = await Promise.all(all.map(entry => isEntryLive(entry)));
+  return all.filter((entry, index) => {
+    const live = results[index] ?? false;
+    if (!live) registry.remove(entry.name);
+    return live;
+  });
 }

@@ -50,7 +50,7 @@ export interface P2pAskBatchDetails {
 
 export interface P2pAskValidationDetails {
   kind: 'validation';
-  error: 'duplicate_target';
+  error: 'duplicate_target' | 'empty_requests';
   duplicateTargets: string[];
 }
 
@@ -104,6 +104,13 @@ export function createP2pAskTool(source: P2pStateSource): ToolDefinition<typeof 
     async execute(_toolCallId, params, signal, onUpdate): Promise<AgentToolResult<P2pAskDetails | Record<string, unknown>>> {
       // Direct test/SDK callers can bypass Pi's prepareArguments hook, so normalize here too.
       const requests = normalizeP2pAskArguments(params).requests;
+      if (requests.length === 0) {
+        return textResult('p2p_ask requires at least one request. No prompts were dispatched.', {
+          kind: 'validation',
+          error: 'empty_requests',
+          duplicateTargets: [],
+        });
+      }
       const duplicates = duplicateTargets(requests);
       if (duplicates.length > 0) {
         const message = `Duplicate p2p_ask target${duplicates.length === 1 ? '' : 's'}: ${duplicates.map(name => `"${name}"`).join(', ')}. No prompts were dispatched.`;
@@ -188,9 +195,11 @@ export class P2pAskBatchResultComponent implements Component {
     const safeWidth = Math.max(1, width);
     const lines: string[] = [truncateToWidth(this.theme.fg('toolTitle', this.theme.bold('p2p_ask')), safeWidth, '')];
     if (this.details?.kind === 'validation') {
-      lines.push(
-        ...wrapStyled(this.theme.fg('error', `${STATUS_SYMBOLS.failure} Duplicate targets: ${this.details.duplicateTargets.join(', ')}`), safeWidth),
-      );
+      const message =
+        this.details.error === 'empty_requests'
+          ? 'At least one request is required.'
+          : `Duplicate targets: ${this.details.duplicateTargets.join(', ')}`;
+      lines.push(...wrapStyled(this.theme.fg('error', `${STATUS_SYMBOLS.failure} ${message}`), safeWidth));
       return lines;
     }
 
@@ -370,7 +379,6 @@ function fairShares(needs: number[], budget: number): number[] {
       remaining -= grant;
       if (shares[index] < requested) next.push(index);
     }
-    if (next.length === active.length && share === 0) break;
     active = next;
   }
   return shares;
