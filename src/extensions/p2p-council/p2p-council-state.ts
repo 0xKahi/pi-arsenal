@@ -120,6 +120,7 @@ export class P2pCouncilState {
 
   // Promotion
   private promotionTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
   private binding: { token: P2pCouncilBindingToken; runtime: P2pCouncilRuntimeBinding } | null = null;
   private handoffTimer: ReturnType<typeof setTimeout> | null = null;
@@ -166,6 +167,7 @@ export class P2pCouncilState {
       this.handoffTimer = null;
       if (!this.binding) this.dispose();
     }, RUNTIME_HANDOFF_TIMEOUT_MS);
+    this.handoffTimer.unref?.();
     return true;
   }
 
@@ -401,10 +403,15 @@ export class P2pCouncilState {
       clearTimeout(this.promotionTimer);
       this.promotionTimer = null;
     }
+    if (this.reconnectRetryTimer) {
+      clearTimeout(this.reconnectRetryTimer);
+      this.reconnectRetryTimer = null;
+    }
     if (this.keepaliveTimer) {
       clearInterval(this.keepaliveTimer);
       this.keepaliveTimer = null;
     }
+    this.pendingRemotePrompt = null;
     const priorCouncilName = this.councilName;
     const priorConnectionType = this.connectionType;
 
@@ -723,6 +730,7 @@ export class P2pCouncilState {
         resolve({ success: true, councilName });
       };
       const welcomeTimer = setTimeout(() => finishFailure('welcome handshake timed out'), WELCOME_TIMEOUT_MS);
+      welcomeTimer.unref?.();
 
       socket.on('open', () => {
         if (this.disposed) {
@@ -772,6 +780,8 @@ export class P2pCouncilState {
         if (this.ws === socket) this.ws = null;
         if (this.disposed) return;
         if (wasClient) {
+          const lostHostName = this.clientHostName;
+          if (lostHostName) this.failPendingFor(lostHostName);
           const lostCouncilName = this.councilName;
           const lostPort = this.councilPort;
           const lostToken = this.councilToken;
@@ -804,6 +814,7 @@ export class P2pCouncilState {
       if (this.disposed || this.manuallyDisconnected || this.connectionType !== 'disconnected') return;
       void this.attemptPromotion(councilName, port, token);
     }, delay);
+    this.promotionTimer.unref?.();
   }
 
   private async attemptPromotion(councilName: string, port: number, token: string): Promise<void> {
@@ -814,15 +825,17 @@ export class P2pCouncilState {
     }
     // Someone else won the race, or the port never frees up (rare). Retry as client.
     const rejoin = await this.connectAsClient(councilName, port, token);
-    if (!rejoin.success) {
-      setTimeout(
+    if (!rejoin.success && !this.reconnectRetryTimer) {
+      this.reconnectRetryTimer = setTimeout(
         () => {
+          this.reconnectRetryTimer = null;
           if (!this.disposed && !this.manuallyDisconnected && this.connectionType === 'disconnected') {
             this.schedulePromotion(councilName, port, token);
           }
         },
         RECONNECT_RETRY_MS + Math.random() * 1000,
       );
+      this.reconnectRetryTimer.unref?.();
     }
   }
 
@@ -844,6 +857,7 @@ export class P2pCouncilState {
         resolve(result);
       };
       const timer = setTimeout(() => finish(undefined), PEEK_TIMEOUT_MS);
+      timer.unref?.();
       socket.on('open', () => socket.send(JSON.stringify({ type: 'peek' })));
       socket.on('message', raw => {
         const msg = safeParseP2pMessage(raw.toString());
@@ -921,7 +935,7 @@ export class P2pCouncilState {
           this.sendChatLikeMessage(unavailable);
           break;
         }
-        if (this.agentRunning || this.pendingRemotePrompt) {
+        if (!this.runtimeFor()?.isIdle() || this.pendingRemotePrompt) {
           const busy: PromptResponseMsg = {
             type: 'prompt_response',
             id: msg.id,
@@ -936,6 +950,7 @@ export class P2pCouncilState {
         this.pendingRemotePrompt = { id: msg.id, from: msg.from };
         if (this.keepaliveTimer) clearInterval(this.keepaliveTimer);
         this.keepaliveTimer = setInterval(() => this.pushStatus(true), KEEPALIVE_INTERVAL_MS);
+        this.keepaliveTimer.unref?.();
         this.runtimeFor()?.notify(`Running remote prompt from "${msg.from}"`, 'info');
         this.runtimeFor()?.runRemotePrompt(msg.from, msg.prompt);
         break;
@@ -982,6 +997,7 @@ export class P2pCouncilState {
   private scheduleFlush(delay: number): void {
     if (this.flushTimer) clearTimeout(this.flushTimer);
     this.flushTimer = setTimeout(() => this.flushInbox(), delay);
+    this.flushTimer.unref?.();
   }
 
   private flushInbox(): void {
@@ -1065,6 +1081,7 @@ export class P2pCouncilState {
         const pending = this.cleanupPending(requestId);
         if (pending) resolve({ error: `hard_ceiling:${PROMPT_HARD_CEILING_MS / 60_000}min` });
       }, PROMPT_HARD_CEILING_MS);
+      ceilingTimeout.unref?.();
 
       this.pendingPromptResponses.set(requestId, { resolve: r => resolve(r), targetName: to, inactivityTimeout, ceilingTimeout });
 
@@ -1091,10 +1108,12 @@ export class P2pCouncilState {
     targetName: string,
     resolve: (result: { response?: string; error?: string }) => void,
   ): ReturnType<typeof setTimeout> {
-    return setTimeout(() => {
+    const timeout = setTimeout(() => {
       const pending = this.cleanupPending(requestId);
       if (pending) resolve({ error: `inactivity_timeout:${targetName}:${PROMPT_INACTIVITY_MS / 1000}s` });
     }, PROMPT_INACTIVITY_MS);
+    timeout.unref?.();
+    return timeout;
   }
 
   private resetInactivityFor(targetName: string): void {

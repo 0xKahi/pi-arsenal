@@ -99,8 +99,8 @@ export function isPidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
   }
 }
 
@@ -122,6 +122,7 @@ export function probeCouncilPort(port: number, token: string, timeoutMs = PROBE_
       resolve(result);
     };
     const timer = setTimeout(() => finish(false), timeoutMs);
+    timer.unref?.();
     socket.on('open', () => finish(true));
     socket.on('error', () => finish(false));
   });

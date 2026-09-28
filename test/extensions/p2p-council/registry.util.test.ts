@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, jest, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -81,6 +81,17 @@ describe('isPidAlive', () => {
 
   test('returns false for a pid unlikely to exist', () => {
     expect(isPidAlive(999_999)).toBe(false);
+  });
+
+  test('treats EPERM as a live process', () => {
+    const kill = jest.spyOn(process, 'kill').mockImplementation(() => {
+      throw Object.assign(new Error('permission denied'), { code: 'EPERM' });
+    });
+    try {
+      expect(isPidAlive(123)).toBe(true);
+    } finally {
+      kill.mockRestore();
+    }
   });
 });
 

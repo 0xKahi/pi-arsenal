@@ -149,11 +149,16 @@ describe('p2p-council tools', () => {
   });
 
   test('p2p_ask normalizes busy errors without throwing', async () => {
-    const { host, client } = await connectedPair('busy-ask-council');
-    host.setAgentRunning(true);
+    const host = spawn('busy-host', { isIdle: () => false });
+    await host.createCouncil('busy-ask-council');
+    const client = spawn('busy-client');
+    const entry = registry.read('busy-ask-council');
+    if (!entry) throw new Error('missing entry');
+    await client.joinCouncil(entry);
+    await Bun.sleep(20);
     const result = await createP2pAskTool(client).execute(
       'id',
-      { requests: [{ to: 'host-a', prompt: 'ping' }] },
+      { requests: [{ to: 'busy-host', prompt: 'ping' }] },
       undefined,
       undefined,
       undefined as never,
