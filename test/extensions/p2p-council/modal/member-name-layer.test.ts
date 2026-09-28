@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { Theme } from '@earendil-works/pi-coding-agent';
+import { MEMBER_NAME_MAX_LENGTH } from '../../../../src/extensions/p2p-council/constants';
 import { MemberNameLayer, type MemberNameSubmitResult } from '../../../../src/extensions/p2p-council/modal/member-name-layer';
 
 const theme = {
@@ -102,6 +103,22 @@ describe('MemberNameLayer', () => {
     expect(calls).toBe(0);
     expect(accepted()).toBe(0);
     expect(layer.render(40, undefined).join('\n')).toContain('Member name cannot contain spaces.');
+  });
+
+  test('rejects names longer than the supported member-name limit', async () => {
+    let calls = 0;
+    const { layer, accepted } = makeLayer('a', async () => {
+      calls++;
+      return { success: true };
+    });
+
+    for (const char of 'x'.repeat(MEMBER_NAME_MAX_LENGTH)) layer.handleInput(char);
+    layer.handleInput(ENTER);
+    await Bun.sleep(0);
+
+    expect(calls).toBe(0);
+    expect(accepted()).toBe(0);
+    expect(layer.render(80, undefined).join('\n')).toContain('Member name must be 64 characters or fewer.');
   });
 
   test('accepts a colliding name without warning - the host deduplicates', async () => {

@@ -53,6 +53,20 @@ describe('P2pCouncilState', () => {
     expect(registry.exists('team-a')).toBe(true);
   });
 
+  test('concurrent council creates claim the registry entry exclusively', async () => {
+    const first = spawn('host-first');
+    const second = spawn('host-second');
+    const results = await Promise.all([first.createCouncil('exclusive-team'), second.createCouncil('exclusive-team')]);
+    expect(results.filter(result => result.success)).toHaveLength(1);
+    const loserIndex = results[0]?.success ? 1 : 0;
+    const loser = loserIndex === 0 ? first : second;
+    expect(results[loserIndex]).toMatchObject({ success: false, error: expect.stringContaining('already exists') });
+    expect(loser.getConnectionType()).toBe('disconnected');
+    const winner = results[0]?.success ? first : second;
+    const entry = registry.read('exclusive-team');
+    expect(entry?.port).toBe((winner as unknown as { councilPort: number }).councilPort);
+  });
+
   test('host requires the council token and rejects Origin headers', async () => {
     const host = spawn('secure-host');
     await host.createCouncil('secure-council');
@@ -79,6 +93,20 @@ describe('P2pCouncilState', () => {
       valid.once('error', reject);
     });
     valid.close();
+  });
+
+  test('rejects a socket registering with an invalid member name', async () => {
+    const host = spawn('host-invalid-name');
+    await host.createCouncil('invalid-name-council');
+    const entry = registry.read('invalid-name-council');
+    if (!entry) throw new Error('missing entry');
+    const socket = new WebSocket(councilUrl(entry.port, entry.token));
+    await new Promise<void>((resolve, reject) => {
+      socket.once('open', () => socket.send(JSON.stringify({ type: 'register', name: 'two words' })));
+      socket.once('close', () => resolve());
+      socket.once('error', reject);
+    });
+    expect(host.getRoster().map(member => member.identity.name)).toEqual(['host-invalid-name']);
   });
 
   test('createCouncil rejects a name with a live registry entry', async () => {

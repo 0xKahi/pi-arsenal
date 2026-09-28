@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { link, mkdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { WebSocket } from 'ws';
 import { Atomic } from '../../utils/atomic.util';
@@ -51,6 +52,25 @@ export class CouncilRegistry {
       else this.remove(name);
     }
     return entries;
+  }
+
+  /** Create an entry only if no file with its name already exists. */
+  public async create(entry: CouncilRegistryEntry): Promise<boolean> {
+    await mkdir(this.dir.path, { recursive: true, mode: 0o700 });
+    const entryPath = this.entryPath(entry.name);
+    const tempPath = `${entryPath}.tmp.${process.pid}.${randomBytes(8).toString('hex')}`;
+    try {
+      await writeFile(tempPath, JSON.stringify(entry), { flag: 'wx', mode: 0o600 });
+      try {
+        await link(tempPath, entryPath);
+        return true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
+        throw error;
+      }
+    } finally {
+      await unlink(tempPath).catch(() => {});
+    }
   }
 
   /** Atomically write (create or replace) an entry via write-temp-then-rename. */

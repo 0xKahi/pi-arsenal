@@ -5,6 +5,8 @@
  * Remote-compaction messages from pi-link are intentionally not carried over.
  */
 
+import { z } from 'zod';
+
 export type P2pStatus = { kind: 'idle'; since: number } | { kind: 'thinking'; since: number } | { kind: 'tool'; toolName: string; since: number };
 
 export type P2pContextSnapshot = { tokens: number | null; contextWindow: number };
@@ -110,34 +112,75 @@ export type P2pMessage =
   | PeekMsg
   | PeekResponseMsg;
 
+const memberNameSchema = z.string().min(1).max(128).regex(/^\S+$/);
+const boundedString = (max: number) => z.string().max(max);
+const contextSchema = z.object({ tokens: z.number().nullable(), contextWindow: z.number() });
+const statusSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('idle'), since: z.number() }),
+  z.object({ kind: z.literal('thinking'), since: z.number() }),
+  z.object({ kind: z.literal('tool'), toolName: boundedString(256), since: z.number() }),
+]);
+const identitySchema = z.object({
+  name: memberNameSchema,
+  model: boundedString(256).optional(),
+  description: boundedString(1000).optional(),
+  cwd: boundedString(4096).optional(),
+  context: contextSchema.optional(),
+});
+const statusesSchema = z.record(memberNameSchema, statusSchema);
+const councilNameSchema = z.string().max(256);
+const messageSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('register'),
+    name: memberNameSchema,
+    model: boundedString(256).optional(),
+    description: boundedString(1000).optional(),
+    cwd: boundedString(4096).optional(),
+    context: contextSchema.optional(),
+  }),
+  z.object({
+    type: z.literal('welcome'),
+    assignedName: memberNameSchema,
+    host: identitySchema,
+    clients: z.array(identitySchema),
+    statuses: statusesSchema,
+  }),
+  z.object({ type: z.literal('member_joined'), identity: identitySchema }),
+  z.object({ type: z.literal('member_left'), name: memberNameSchema }),
+  z.object({ type: z.literal('chat'), from: memberNameSchema, to: memberNameSchema, content: z.string(), triggerTurn: z.boolean() }),
+  z.object({ type: z.literal('prompt_request'), id: boundedString(256), from: memberNameSchema, to: memberNameSchema, prompt: z.string() }),
+  z.object({
+    type: z.literal('prompt_response'),
+    id: boundedString(256),
+    from: memberNameSchema,
+    to: memberNameSchema,
+    response: z.string(),
+    error: boundedString(1000).optional(),
+  }),
+  z.object({
+    type: z.literal('status_update'),
+    name: memberNameSchema,
+    status: statusSchema,
+    model: boundedString(256).optional(),
+    context: contextSchema.nullable().optional(),
+  }),
+  z.object({ type: z.literal('error'), message: boundedString(1000) }),
+  z.object({ type: z.literal('peek') }),
+  z.object({
+    type: z.literal('peek_response'),
+    councilName: councilNameSchema,
+    host: identitySchema.optional(),
+    clients: z.array(identitySchema),
+    statuses: statusesSchema,
+  }),
+]);
+
 export function safeParseP2pMessage(raw: string): P2pMessage | undefined {
   try {
     const parsed: unknown = JSON.parse(raw);
-    if (parsed === null || typeof parsed !== 'object' || typeof (parsed as { type?: unknown }).type !== 'string') return undefined;
-    if ((parsed as { type: string }).type === 'welcome' && !isWelcomeMsg(parsed)) return undefined;
-    return parsed as P2pMessage;
+    const result = messageSchema.safeParse(parsed);
+    return result.success ? (result.data as P2pMessage) : undefined;
   } catch {
     return undefined;
   }
-}
-
-function isWelcomeMsg(value: unknown): value is WelcomeMsg {
-  if (value === null || typeof value !== 'object') return false;
-  const msg = value as Record<string, unknown>;
-  if (msg.type !== 'welcome' || typeof msg.assignedName !== 'string' || !isIdentity(msg.host) || !Array.isArray(msg.clients)) return false;
-  if (!msg.clients.every(isIdentity) || msg.statuses === null || typeof msg.statuses !== 'object' || Array.isArray(msg.statuses)) return false;
-  return Object.values(msg.statuses).every(isStatus);
-}
-
-function isIdentity(value: unknown): value is P2pIdentity {
-  if (value === null || typeof value !== 'object') return false;
-  const identity = value as Record<string, unknown>;
-  return typeof identity.name === 'string';
-}
-
-function isStatus(value: unknown): value is P2pStatus {
-  if (value === null || typeof value !== 'object') return false;
-  const status = value as Record<string, unknown>;
-  if (typeof status.since !== 'number') return false;
-  return status.kind === 'idle' || status.kind === 'thinking' || (status.kind === 'tool' && typeof status.toolName === 'string');
 }

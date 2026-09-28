@@ -1,6 +1,7 @@
 import type { Theme } from '@earendil-works/pi-coding-agent';
 import { Input, Key, matchesKey, type TUI } from '@earendil-works/pi-tui';
 import { fitLine, type Hint, type ModalLayer, type NavigationAction } from '../../../libs/modal';
+import { MEMBER_NAME_MAX_LENGTH } from '../constants';
 
 /** Outcome of the connect action a member name was collected for. */
 export type MemberNameSubmitResult = { success: true } | { success: false; error: string };
@@ -86,6 +87,11 @@ export class MemberNameLayer implements ModalLayer {
     const name = this.input.getValue();
     if (name === '') {
       this.error = 'Member name is required.';
+      this.tui.requestRender();
+      return;
+    }
+    if (name.length > MEMBER_NAME_MAX_LENGTH) {
+      this.error = `Member name must be ${MEMBER_NAME_MAX_LENGTH} characters or fewer.`;
       this.tui.requestRender();
       return;
     }

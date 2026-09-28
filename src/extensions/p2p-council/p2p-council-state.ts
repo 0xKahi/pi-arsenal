@@ -384,7 +384,7 @@ export class P2pCouncilState {
     if (existing) this.registry.remove(name);
 
     if (memberName) this.selfName = memberName;
-    return this.startHost(name, undefined, generateCouncilToken());
+    return this.startHost(name, undefined, generateCouncilToken(), true);
   }
 
   /** `memberName` overrides the registration name for this connection only. See `createCouncil`. */
@@ -470,7 +470,7 @@ export class P2pCouncilState {
 
   // ── Hosting ──────────────────────────────────────────────────────────────
 
-  private startHost(name: string, preferredPort: number | undefined, token: string): Promise<CreateCouncilResult> {
+  private startHost(name: string, preferredPort: number | undefined, token: string, exclusiveCreate = false): Promise<CreateCouncilResult> {
     return new Promise(resolve => {
       const server = new WebSocketServer({
         port: preferredPort ?? 0,
@@ -505,6 +505,22 @@ export class P2pCouncilState {
           const address = server.address();
           const port = typeof address === 'object' && address !== null ? address.port : (preferredPort ?? 0);
 
+          const registryEntry = { name, port, hostPid: process.pid, createdAt: new Date().toISOString(), token };
+          try {
+            let created = true;
+            if (exclusiveCreate) created = await this.registry.create(registryEntry);
+            else await this.registry.write(registryEntry);
+            if (!created) {
+              server.close();
+              resolve({ success: false, error: `Council "${name}" already exists and is live.` });
+              return;
+            }
+          } catch (error) {
+            server.close();
+            resolve({ success: false, error: error instanceof Error ? error.message : String(error) });
+            return;
+          }
+
           this.server = server;
           this.connectionType = 'host';
           this.councilName = name;
@@ -517,7 +533,6 @@ export class P2pCouncilState {
           this.lastPushedKind = null;
           this.lastPushedTool = null;
 
-          await this.registry.write({ name, port, hostPid: process.pid, createdAt: new Date().toISOString(), token });
           this.runtimeFor()?.notify(`council created: "${name}" (port=${port})`, 'info');
           this.emitChange();
           this.pushStatus(true);
@@ -546,7 +561,14 @@ export class P2pCouncilState {
     clientWs.on('message', raw => {
       if (this.disposed) return;
       const msg = safeParseP2pMessage(raw.toString());
-      if (!msg) return;
+      if (!msg) {
+        if (!clientName) clientWs.close();
+        return;
+      }
+      if (!clientName && msg.type !== 'register' && msg.type !== 'peek') {
+        clientWs.close();
+        return;
+      }
 
       if (msg.type === 'peek') {
         isPeeker = true;
