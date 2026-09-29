@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import type { ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
+import type { ExtensionToolContext, Theme } from '@earendil-works/pi-coding-agent';
 import { visibleWidth } from '@earendil-works/pi-tui';
 import type { SpawnToolDetails } from '../../../../../src/extensions/multiverse/results/child-interaction.ts';
 import { createSpawnTool, type SpawnToolHost } from '../../../../../src/extensions/multiverse/tools/spawn/spawn.tool.ts';
@@ -344,7 +344,7 @@ describe('spawn renderResult', () => {
       { context: 'shared', tasks: [{ action: 'create', agent: 'fixer', task: 'implement' }] } as never,
       undefined,
       undefined,
-      { cwd: '/tmp' } as unknown as ExtensionContext,
+      { cwd: '/tmp' } as unknown as ExtensionToolContext,
     );
 
     expect(result.details.boundaryNonce).toMatch(/^[0-9a-f]+$/);

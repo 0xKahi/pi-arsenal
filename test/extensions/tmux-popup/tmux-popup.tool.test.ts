@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import type { AgentToolResult } from '@earendil-works/pi-agent-core';
-import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import { createTmuxPopupTool, type TmuxPopupToolDetails } from '../../../src/extensions/tmux-popup/tmux-popup.tool';
 
 describe('tmux_popup tool execute', () => {
   const config = { enabled: true, width: 50, height: 50, fileCommand: 'nvim' };
-  const ctx = {} as ExtensionContext;
+  const ctx = {} as unknown as ExtensionToolContext;
   let originalTmux: string | undefined;
   let capturedCommand = '';
 
