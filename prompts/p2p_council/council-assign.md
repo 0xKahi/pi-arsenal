@@ -26,7 +26,7 @@ Anything a remote agent needs — file paths, task state, expected output, where
 - callback convention for `p2p_send(triggerTurn: true)` you do not get an automatic response, so ask the receiver to report back when done.
 - after `p2p_send(triggerTurn: true)` to agent X, do not `p2p_ask` X until X sends a completion callback. or until `p2p_ls` shows X is idle again 
 - when assigning tasks to agents be specific about the task, do not assign the same task to multiple agents in the same `cwd` 
-  to avoid duplicate work, file edits etc. 
+  to avoid duplicate work, file edits, etc. 
 
 **Tips:**
 - you can parallelize synchronous tasks by using `p2p_ask` with multiple agents at once, allowing for faster execution.
@@ -34,21 +34,21 @@ Anything a remote agent needs — file paths, task state, expected output, where
 
 ## Defining Agent Identity 
 
-each agent has a should have a unique identity and purpose form the `p2p_ls` tool
+each agent should have a unique identity and purpose, shown by the `p2p_ls` tool
 
 - **name**: the unique identifier of the agent
-- **cwd**: the current working directory of the agent this marks the agents domain and the files it can access.
-agents with the same cwd as you means they share the same domain and can execute tasks within that domain.
-- **description**: this is an optional field that can be included in `p2p_ls` and it provides the description
-of the agents domain and what they have access to. some agents might have the same description but different cwd. 
-which could mean that they are in different worktrees/workspaces
+- **cwd**: the current working directory of the agent. This marks the agent's domain and the files it can access.
+Agents with the same cwd as you share the same domain and can execute tasks within that domain.
+- **description**: this optional field can be included in `p2p_ls`; it provides the description
+of the agent's domain and what they have access to. Some agents might have the same description but different cwd. 
+This could mean that they are in different worktrees/workspaces
 
 
 ## Workflow 
 
 ### Assigning Roles
 
-after running the `p2p_ls` tool list out all your available council members dont include yourself always return as a numbered list
+after running the `p2p_ls` tool list out all your available council members don't include yourself; always return as a numbered list
 and ask the user to assign a role to each member
 
 **Return Format:**
@@ -62,14 +62,14 @@ What roles would you like to assign to the following council members?
 **note:** user does not have to assign every agent a role
 
 the `roles` assigned to each agent along with their `cwd` and `description` should determine how you will use each agent 
-for now an all future tasks until the user reassign their roles or the agent leaves the council.
+for now and all future tasks until the user reassign their roles or the agent leaves the council.
 
 **Example:**
 - user assigns the role of "fixer: an agent to do quick fixes and code fixes" to 3 agents with the same cwd.
   this means you should use these 3 agents to do quick fixes and code fixes in that domain.
-- user assigns the role of "explorer: an agent to explore and find new information" to an agents with same cwd.
+- user assigns the role of "explorer: an agent to explore and find new information" to 2 agents with the same cwd.
   this means you should use these 2 agents to explore and find new information in the current cwd.
-- user assigns the role of "reference: agent has acces to X use it to get information about Y" to an agent with a different cwd.
+- user assigns the role of "reference: agent has access to X use it to get information about Y" to an agent with a different cwd.
   this means you should get this agent to get information about Y from X in that domain.
 
 

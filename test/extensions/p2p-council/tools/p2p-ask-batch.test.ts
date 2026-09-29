@@ -108,6 +108,26 @@ describe('p2p_ask batch execution', () => {
     expect(text(result)).toContain('Failure from "beta"');
   });
 
+  test('rejects an empty request list with a validation result and renderer message', async () => {
+    let calls = 0;
+    const tool = createP2pAskTool(
+      stateWith(async () => {
+        calls++;
+        return { response: 'unexpected' };
+      }),
+    );
+    const result = await tool.execute('id', { requests: [] }, undefined, undefined, undefined as never);
+
+    expect(calls).toBe(0);
+    expect(text(result)).toBe('p2p_ask requires at least one request. No prompts were dispatched.');
+    expect(result.details).toEqual({ kind: 'validation', error: 'empty_requests', duplicateTargets: [] });
+    const component = tool.renderResult!(result, { expanded: false, isPartial: false }, plainTheme, {
+      args: { requests: [] },
+      invalidate: () => {},
+    } as never);
+    expect(component.render(80).join('\n')).toContain('At least one request is required.');
+  });
+
   test('rejects case-sensitive duplicate targets atomically', async () => {
     let calls = 0;
     const tool = createP2pAskTool(

@@ -86,6 +86,7 @@ function makeCtx(
     notifyCalls?: { message: string; type?: string }[];
     setWidgetCalls?: unknown[];
     custom?: (...args: unknown[]) => Promise<unknown>;
+    isIdle?: () => boolean;
   } = {},
 ): ExtensionContext {
   const notifyCalls = opts.notifyCalls ?? [];
@@ -94,7 +95,7 @@ function makeCtx(
     cwd,
     mode: 'tui',
     isProjectTrusted: () => true,
-    isIdle: () => true,
+    isIdle: opts.isIdle ?? (() => true),
     getContextUsage: () => undefined,
     model: { id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol' } as never,
     ui: {
@@ -392,7 +393,8 @@ describe('registerP2pCouncil lazy activation', () => {
   it('delivers attributed custom steers, triggering batches, and remote prompts with correct turn behavior', async () => {
     mockConfig(true);
     const runtime = makePi();
-    const activation = activateP2pCouncil(runtime.pi, makeCtx(cwd), { config });
+    let idle = true;
+    const activation = activateP2pCouncil(runtime.pi, makeCtx(cwd, { isIdle: () => idle }), { config });
     const councilName = `presentation-${Math.random().toString(36).slice(2)}`;
     await activation.state.createCouncil(councilName);
     const registry = new CouncilRegistry();
@@ -466,7 +468,7 @@ describe('registerP2pCouncil lazy activation', () => {
       );
       expect(await replyPromise).toMatchObject({ response: 'final response', from: activation.state.getSelfName() });
 
-      activation.state.setAgentRunning(true);
+      idle = false;
       const countBeforeBusyAsk = runtime.sendMessageCalls.length;
       expect(await client.askPrompt(activation.state.getSelfName(), 'should not inject')).toMatchObject({ error: 'Terminal is busy' });
       expect(runtime.sendMessageCalls).toHaveLength(countBeforeBusyAsk);

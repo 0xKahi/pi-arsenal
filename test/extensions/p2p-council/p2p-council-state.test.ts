@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, jest, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { WebSocketServer } from 'ws';
+import { WebSocket, WebSocketServer } from 'ws';
 import { P2pCouncilState, type P2pCouncilStateDeps } from '../../../src/extensions/p2p-council/p2p-council-state';
-import { CouncilRegistry } from '../../../src/extensions/p2p-council/registry.util';
+import { CouncilRegistry, councilUrl } from '../../../src/extensions/p2p-council/registry.util';
 import { PathUtil } from '../../../src/utils/path.util';
 
 function makeDeps(overrides: Partial<P2pCouncilStateDeps> & { name: string; registry: CouncilRegistry }): P2pCouncilStateDeps {
@@ -51,6 +51,62 @@ describe('P2pCouncilState', () => {
     expect(host.getConnectionType()).toBe('host');
     expect(host.getCouncilName()).toBe('team-a');
     expect(registry.exists('team-a')).toBe(true);
+  });
+
+  test('concurrent council creates claim the registry entry exclusively', async () => {
+    const first = spawn('host-first');
+    const second = spawn('host-second');
+    const results = await Promise.all([first.createCouncil('exclusive-team'), second.createCouncil('exclusive-team')]);
+    expect(results.filter(result => result.success)).toHaveLength(1);
+    const loserIndex = results[0]?.success ? 1 : 0;
+    const loser = loserIndex === 0 ? first : second;
+    expect(results[loserIndex]).toMatchObject({ success: false, error: expect.stringContaining('already exists') });
+    expect(loser.getConnectionType()).toBe('disconnected');
+    const winner = results[0]?.success ? first : second;
+    const entry = registry.read('exclusive-team');
+    expect(entry?.port).toBe((winner as unknown as { councilPort: number }).councilPort);
+  });
+
+  test('host requires the council token and rejects Origin headers', async () => {
+    const host = spawn('secure-host');
+    await host.createCouncil('secure-council');
+    const entry = registry.read('secure-council');
+    if (!entry) throw new Error('missing entry');
+
+    const rejected = (url: string, headers?: Record<string, string>) =>
+      new Promise<boolean>(resolve => {
+        const socket = new WebSocket(url, { headers });
+        socket.on('open', () => {
+          socket.close();
+          resolve(false);
+        });
+        socket.on('error', () => resolve(true));
+      });
+
+    expect(await rejected(`ws://127.0.0.1:${entry.port}`)).toBe(true);
+    expect(await rejected(councilUrl(entry.port, 'wrong-token'))).toBe(true);
+    expect(await rejected(councilUrl(entry.port, entry.token), { Origin: 'https://example.com' })).toBe(true);
+
+    const valid = new WebSocket(councilUrl(entry.port, entry.token));
+    await new Promise<void>((resolve, reject) => {
+      valid.once('open', resolve);
+      valid.once('error', reject);
+    });
+    valid.close();
+  });
+
+  test('rejects a socket registering with an invalid member name', async () => {
+    const host = spawn('host-invalid-name');
+    await host.createCouncil('invalid-name-council');
+    const entry = registry.read('invalid-name-council');
+    if (!entry) throw new Error('missing entry');
+    const socket = new WebSocket(councilUrl(entry.port, entry.token));
+    await new Promise<void>((resolve, reject) => {
+      socket.once('open', () => socket.send(JSON.stringify({ type: 'register', name: 'two words' })));
+      socket.once('close', () => resolve());
+      socket.once('error', reject);
+    });
+    expect(host.getRoster().map(member => member.identity.name)).toEqual(['host-invalid-name']);
   });
 
   test('createCouncil rejects a name with a live registry entry', async () => {
@@ -142,6 +198,7 @@ describe('P2pCouncilState', () => {
       port: address.port,
       hostPid: process.pid,
       createdAt: new Date().toISOString(),
+      token: 'test-token',
     });
 
     expect(result).toEqual({ success: false, error: 'welcome handshake timed out' });
@@ -311,7 +368,7 @@ describe('P2pCouncilState', () => {
   });
 
   test('askPrompt against a busy target returns an error', async () => {
-    const host = spawn('host-a');
+    const host = spawn('host-a', { isIdle: () => false });
     await host.createCouncil('team-h');
     const entry = registry.read('team-h');
     if (!entry) throw new Error('missing entry');
@@ -321,6 +378,19 @@ describe('P2pCouncilState', () => {
 
     host.setAgentRunning(true);
     const result = await client.askPrompt('host-a', 'ping');
+    expect(result.error).toBe('Terminal is busy');
+  });
+
+  test('declines a remote prompt when runtime is not idle', async () => {
+    const host = spawn('host-busy', { isIdle: () => false });
+    await host.createCouncil('team-busy');
+    const entry = registry.read('team-busy');
+    if (!entry) throw new Error('missing entry');
+    const client = spawn('client-busy');
+    await client.joinCouncil(entry);
+    await Bun.sleep(20);
+
+    const result = await client.askPrompt('host-busy', 'ping');
     expect(result.error).toBe('Terminal is busy');
   });
 
@@ -468,6 +538,46 @@ describe('P2pCouncilState', () => {
     }
   });
 
+  test('disconnect clears a remote prompt before joining another council', async () => {
+    const hostA = spawn('host-a-prompt', { runRemotePrompt: () => {} });
+    await hostA.createCouncil('prompt-council-a');
+    const entryA = registry.read('prompt-council-a');
+    if (!entryA) throw new Error('missing entry');
+    const callerA = spawn('caller-a');
+    await callerA.joinCouncil(entryA);
+    await Bun.sleep(20);
+
+    const pending = callerA.askPrompt('host-a-prompt', 'unfinished');
+    await Bun.sleep(20);
+    hostA.disconnect('manual');
+
+    const hostB = spawn('host-b-prompt');
+    await hostB.createCouncil('prompt-council-b');
+    const entryB = registry.read('prompt-council-b');
+    if (!entryB) throw new Error('missing entry');
+    await hostA.joinCouncil(entryB);
+    await Bun.sleep(20);
+    hostA.resolveRemotePrompt('stale response');
+
+    expect((await pending).error).toBe('disconnected:host-a-prompt');
+    expect(hostA.getConnectionType()).toBe('client');
+  });
+
+  test('pending ask to a crashed host fails immediately as disconnected', async () => {
+    const host = spawn('host-crash-ask', { runRemotePrompt: () => {} });
+    await host.createCouncil('crash-ask-council');
+    const entry = registry.read('crash-ask-council');
+    if (!entry) throw new Error('missing entry');
+    const client = spawn('client-crash-ask');
+    await client.joinCouncil(entry);
+    await Bun.sleep(20);
+
+    const pending = client.askPrompt('host-crash-ask', 'unfinished');
+    await Bun.sleep(20);
+    host.debugSimulateCrash();
+    expect(await pending).toMatchObject({ error: 'disconnected:host-crash-ask' });
+  });
+
   test('promotion: a client rebinds the same port and becomes host after the original host disconnects', async () => {
     const host = spawn('host-a');
     await host.createCouncil('team-l');
@@ -489,5 +599,6 @@ describe('P2pCouncilState', () => {
     expect(client.getCouncilName()).toBe('team-l');
     const promoted = registry.read('team-l');
     expect(promoted?.port).toBe(originalPort);
+    expect(promoted?.token).toBe(entry.token);
   }, 10000);
 });

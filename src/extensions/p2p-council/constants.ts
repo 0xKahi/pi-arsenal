@@ -4,6 +4,7 @@ export const COMMAND_NAME = 'p2p-council';
 export const PI_VIM_KEY_EVENT_ID = piVimKeyEventId('p2p_council');
 
 export const STATUS_WIDGET_KEY = 'p2p-council-status';
+export const MEMBER_NAME_MAX_LENGTH = 64;
 
 /** No agent activity from a remote prompt target within this window → p2p_ask times out. */
 export const PROMPT_INACTIVITY_MS = 90_000;

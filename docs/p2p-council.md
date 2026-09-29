@@ -126,7 +126,7 @@ Communication uses a JSON WebSocket protocol. Key message types:
 
 All messages are routed through the host (hub-and-spoke topology), which forwards to the appropriate recipient.
 
-> ⚠️ **Security:** The WebSocket server binds to `127.0.0.1` with no authentication. Any local process can connect, peek, or inject messages.
+> **Security:** Each council uses a random token stored in its registry file (file mode `0600`, directory mode `0700`) and required during the WebSocket handshake. Connections with an `Origin` header (including browsers) are rejected. The same token is preserved across host promotion. This protects against browsers and other users, but not processes running as the same user, which can read the registry.
 
 ## Important behaviors
 
