@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import type { ExtensionAPI, ExtensionContext, SessionEntry, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import type { ConfigProvider } from '../../../src/config/config-loader.ts';
 import { SUBAGENT_IDENTITY_CUSTOM_TYPE } from '../../../src/extensions/multiverse/agents/session-identity.ts';
@@ -14,7 +17,7 @@ const customEntry = (customType: string, data: unknown): SessionEntry =>
 
 const childIdentityEntry = customEntry(SUBAGENT_IDENTITY_CUSTOM_TYPE, { version: 1, agent: 'fixer', parentSessionId: 'parent-1' });
 
-const setup = (initialEntries: SessionEntry[] = [], persona: 'default' | 'megamind' = 'default') => {
+const setup = (initialEntries: SessionEntry[] = [], persona: 'default' | 'megamind' = 'default', definitionsDirectory?: string) => {
   // The session JSONL as pi would hold it: appended custom entries land here.
   const entries: SessionEntry[] = [...initialEntries];
   const handlers = new Map<string, Array<(event: never, ctx: ExtensionContext) => unknown>>();
@@ -56,6 +59,7 @@ const setup = (initialEntries: SessionEntry[] = [], persona: 'default' | 'megami
 
   const activation = registerMultiverse(pi, {
     config,
+    definitionsDirectory,
     // Point discovery at absent directories so a developer's real agents folder cannot reach this test.
     projectAgentsDirectory: '/tmp/pi-arsenal-absent-project-agents',
     globalAgentsDirectory: '/tmp/pi-arsenal-absent-global-agents',
@@ -94,6 +98,30 @@ describe('spawn manifest persistence', () => {
     // Custom entries stay out of LLM context, and no renderer is registered for them.
     expect(runtime.renderers).toEqual([]);
   });
+});
+
+describe('unknown-tool warnings', () => {
+  for (const extraTools of [['codemode', 'bogus'], ['codemode']]) {
+    it(`treats codemode as known when the parent lacks it (${extraTools.join(', ')})`, () => {
+      const directory = mkdtempSync(path.join(tmpdir(), 'arsenal-wiring-'));
+      try {
+        writeFileSync(
+          path.join(directory, 'custom.md'),
+          `---\nname: custom\ntools: ${JSON.stringify(['read', ...extraTools])}\nskills: []\nmetadata: ["Custom test agent"]\n---\nYou are a custom agent.\n`,
+        );
+        const runtime = setup([], 'default', directory);
+        if (extraTools.includes('bogus')) {
+          expect(runtime.notifications).toHaveLength(1);
+          expect(runtime.notifications[0]).toContain('unknown tools: bogus.');
+          expect(runtime.notifications[0]).not.toContain('codemode');
+        } else {
+          expect(runtime.notifications).toEqual([]);
+        }
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    });
+  }
 });
 
 describe('parent agent restoration', () => {

@@ -8,6 +8,7 @@ tools:
   - grep
   - find
   - ls
+  - codemode
 skills: []
 color: "#95C9F8"
 metadata:
@@ -37,6 +38,7 @@ Your job is to implement, not plan or research.
 - grep: Search file contents for patterns (respects .gitignore)
 - find: Find files by glob pattern (respects .gitignore)
 - ls: List directory contents
+- codemode: Run JavaScript that calls your other tools (batch independent calls, filter large output)
 </tools>
 
 <rules>
@@ -47,6 +49,9 @@ Your job is to implement, not plan or research.
 - Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.
 - Use write only for new files or complete rewrites.
 - Use bash for build/lint commands. **NEVER** use bash for file edits.
+- Use codemode to batch independent tool calls with Promise.allSettled and chain dependent calls; useful for parallel reads/searches and several validation commands. Use edit for edits.
+- Filter or summarize large results inside the script so only what matters is returned.
+- Codemode can only call tools you already have — it does not grant new permissions.
 - Be concise in your responses
 - Show file paths clearly when working with files
 </rules>

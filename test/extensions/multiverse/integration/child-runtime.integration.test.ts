@@ -167,6 +167,74 @@ describe('ChildRuntime against a real AgentSession', () => {
     expect(JSON.stringify(server.requests.at(-1)?.messages)).toContain('file contents from disk');
   });
 
+  it('declares codemode only when the child definition includes it', async () => {
+    for (const tools of [['read', 'codemode'], ['read']]) {
+      server.script({ text: 'tool declaration checked' });
+      const handle = repository().create(cwd, 'parent-codemode-declaration', 'explorer');
+      const outcome = await runtime().run({
+        cwd,
+        definition: { ...definition, tools },
+        sessionManager: handle.sessionManager,
+        model: server.model,
+        thinkingLevel: 'off',
+        prompt: 'check available tools',
+        checkpoint: null,
+      });
+
+      expect(outcome.status).toBe('success');
+      expect(server.requests.at(-1)?.toolNames.includes('codemode')).toBe(tools.includes('codemode'));
+    }
+  });
+
+  it('executes read through codemode in a read-only child', async () => {
+    const target = path.join(cwd, 'codemode-note.txt');
+    writeFileSync(target, 'contents read through codemode');
+    server.script(
+      { toolCalls: [{ name: 'codemode', arguments: { code: `return await tools.read({ path: ${JSON.stringify(target)} });` } }] },
+      { text: 'codemode read finished' },
+    );
+    const handle = repository().create(cwd, 'parent-codemode-read', 'explorer');
+    const outcome = await runtime().run({
+      cwd,
+      definition: { ...definition, tools: ['read', 'codemode'] },
+      sessionManager: handle.sessionManager,
+      model: server.model,
+      thinkingLevel: 'off',
+      prompt: 'read with codemode',
+      checkpoint: null,
+    });
+
+    expect(outcome.status).toBe('success');
+    const messages = JSON.stringify(server.requests.at(-1)?.messages);
+    expect(messages).toContain('Script completed');
+    expect(messages).toContain('contents read through codemode');
+  });
+
+  for (const tool of ['edit', 'spawn']) {
+    it(`cannot call ${tool} through codemode in a read-only child`, async () => {
+      server.script(
+        { toolCalls: [{ name: 'codemode', arguments: { code: `return await tools.${tool}({});` } }] },
+        { text: 'blocked undeclared tool' },
+      );
+      const handle = repository().create(cwd, `parent-codemode-${tool}`, 'explorer');
+      const outcome = await runtime().run({
+        cwd,
+        definition: { ...definition, tools: ['read', 'codemode'] },
+        sessionManager: handle.sessionManager,
+        model: server.model,
+        thinkingLevel: 'off',
+        prompt: `try ${tool} with codemode`,
+        checkpoint: null,
+      });
+
+      expect(outcome.status).toBe('success');
+      const messages = JSON.stringify(server.requests.at(-1)?.messages);
+      expect(messages).toContain('Script failed');
+      expect(messages).toContain(`tools.${tool} does not exist. Available: read.`);
+      expect(messages).toContain('No tool calls were made.');
+    });
+  }
+
   it('reports abort as a terminal state and preserves work up to the interruption', async () => {
     server.script({ text: 'never delivered', delayMs: 2_000 });
     const handle = repository().create(cwd, 'parent-e', 'explorer');

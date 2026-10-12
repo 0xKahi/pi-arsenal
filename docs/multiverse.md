@@ -76,6 +76,8 @@ Guidelines:
 
 Required frontmatter fields: `name` (non-empty string), `tools` (array), `skills` (array), `metadata` (non-empty array). Optional: `color` (`#RRGGBB`). The filename is decorative and never required to match `name`.
 
+You may list `codemode` in `tools`. It loads into the child only for agents that declare it, independent of the user's codemode settings. Scripts can only call that agent's other declared tools.
+
 ### Precedence
 
 Definitions register in the order bundled → project → global, alphabetical within each directory. The first registration wins:

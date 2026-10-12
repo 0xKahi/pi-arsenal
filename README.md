@@ -180,7 +180,7 @@ Guidelines:
 ```
 
 - `name` (`string`, required) — the registered agent name. The name always comes from the frontmatter; the filename is decorative and is neither parsed nor required to match. Must be non-empty and must not collide with a bundled agent.
-- `tools` (array of strings) — the tool subset this agent may use.
+- `tools` (array of strings) — the tool subset this agent may use. May include `codemode`, which loads into the child only for agents that declare it, independent of the user's codemode settings. Scripts can only call that agent's other declared tools.
 - `skills` (array of strings) — skills granted to the agent.
 - `metadata` (non-empty array of strings, required) — parent-facing routing guidance describing when to delegate.
 - `color` (`#RRGGBB`, optional) — display color.

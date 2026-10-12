@@ -3,6 +3,7 @@ import { clampThinkingLevel } from '@earendil-works/pi-ai/compat';
 import {
   type AgentSessionEvent,
   createAgentSession,
+  createCodemodeExtension,
   DefaultResourceLoader,
   getAgentDir,
   type SessionManager,
@@ -13,6 +14,8 @@ import { DebugLoggerUtil } from '../../../utils/debug-logger.util.ts';
 import type { SubagentDefinition } from '../agents/subagent-definition.ts';
 import { MULTIVERSE_DEBUG } from '../constants.ts';
 import type { ChildInteractionStatus, ChildTelemetry } from '../results/child-interaction.ts';
+
+const CODEMODE_TOOL_NAME = 'codemode';
 
 type CreateSessionOptions = NonNullable<Parameters<typeof createAgentSession>[0]>;
 type DefaultResourceLoaderOptions = ConstructorParameters<typeof DefaultResourceLoader>[0];
@@ -229,8 +232,14 @@ export class ChildRuntime {
   /** Resource overrides shared by every hydrated SDK child runtime. */
   private static resourcePolicy(
     definition: SubagentDefinition,
-  ): Pick<DefaultResourceLoaderOptions, 'skillsOverride' | 'systemPromptOverride' | 'appendSystemPromptOverride' | 'noContextFiles'> {
+  ): Pick<
+    DefaultResourceLoaderOptions,
+    'skillsOverride' | 'systemPromptOverride' | 'appendSystemPromptOverride' | 'noContextFiles' | 'extensionFactories'
+  > {
     return {
+      extensionFactories: definition.tools.includes(CODEMODE_TOOL_NAME)
+        ? [{ name: CODEMODE_TOOL_NAME, factory: createCodemodeExtension(), replaceable: true }]
+        : [],
       noContextFiles: true,
       systemPromptOverride: () => definition.prompt,
       appendSystemPromptOverride: () => [],
