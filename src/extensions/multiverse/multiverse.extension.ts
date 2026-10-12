@@ -20,6 +20,8 @@ import { ChildAdmissionRegistry } from './runtime/child-admission.ts';
 import { ChildSessionRepository } from './runtime/child-session-repository.ts';
 import { createSpawnTool, SPAWN_TOOL_NAME } from './tools/spawn/spawn.tool.ts';
 
+const CODEMODE_TOOL_NAME = 'codemode';
+
 export interface MultiverseDependencies {
   config: ConfigProvider;
   roleState?: SessionRoleState;
@@ -137,6 +139,7 @@ function activateMultiverse(pi: ExtensionAPI, dependencies: MultiverseDependenci
   for (const error of definitionErrors) initialCtx.ui.notify(`pi-arsenal: ${error}`, 'error');
   const roster = subAgents.availableSubAgents;
   const tools = new Set(pi.getAllTools().map(tool => tool.name));
+  tools.add(CODEMODE_TOOL_NAME);
   for (const agent of roster) {
     const unknown = agent.tools.filter(name => !tools.has(name));
     if (unknown.length) {

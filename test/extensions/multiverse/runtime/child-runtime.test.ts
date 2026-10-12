@@ -277,6 +277,27 @@ describe('ChildRuntime construction', () => {
     expect(stub.loaderOptions[0]?.noExtensions).not.toBe(true);
   });
 
+  it('loads a non-builtin, replaceable codemode factory when declared', async () => {
+    const runner = scenario();
+    const stub = stubbedRuntime(runner.state, runner.sessionManager);
+
+    await stub.runtime.run({ ...runner.input, definition: { ...definition, tools: ['read', 'codemode'] } });
+
+    const factories = stub.loaderOptions[0]?.extensionFactories;
+    expect(factories).toHaveLength(1);
+    expect(factories?.[0]).toMatchObject({ name: 'codemode', replaceable: true, factory: expect.any(Function) });
+    expect(factories?.[0]).not.toHaveProperty('builtin');
+  });
+
+  it('loads no codemode factory when undeclared', async () => {
+    const runner = scenario();
+    const stub = stubbedRuntime(runner.state, runner.sessionManager);
+
+    await stub.runtime.run(runner.input);
+
+    expect(stub.loaderOptions[0]?.extensionFactories).toEqual([]);
+  });
+
   it('fully replaces the host prompt and filters ambient skills to the declared subset', async () => {
     const runner = scenario();
     const stub = stubbedRuntime(runner.state, runner.sessionManager);
