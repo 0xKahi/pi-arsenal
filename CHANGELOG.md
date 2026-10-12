@@ -1,5 +1,11 @@
 # @0xkahi/pi-arsenal
 
+## 0.3.11
+
+### Patch Changes
+
+- 762140c: multiverse: enable codemode in children that declare it, independent of user codemode settings and limited to the agent's other tools. Add codemode to bundled subagents with batching and output-filtering guidance, and document opt-in for user definitions.
+
 ## 0.3.10
 
 ### Patch Changes
