@@ -23,7 +23,7 @@ import { type FakeModelServer, type RecordedRequest, startFakeModelServer } from
  * registered child still returns `systemPrompt` for an exact full replacement.
  */
 
-const HOST_BASE_MARKER = 'You are an expert coding assistant operating inside pi';
+const HOST_BASE_MARKER = 'You are a coding assistant running inside pi';
 const MEGAMIND_MARKER = 'You are a workflow manager for coding work.';
 const CHILD_PROMPT = 'CHILD PROMPT INTEGRATION MARKER';
 
