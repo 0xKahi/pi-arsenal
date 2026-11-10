@@ -85,11 +85,9 @@ export function createSpawnTool(host: SpawnToolHost): ToolDefinition<typeof spaw
       'or use a previously spawned subagent childSessionId, to continue on its exsting session context.',
     promptSnippet: 'spawn({context, tasks[]}): run durable subagent tasks concurrently and wait for all of them to settle',
     promptGuidelines: [
-      'Put everything shared by the tasks in `context`, and only task-specific instructions in each `task`.',
-      'Use action "create" for new work, assigning new session to spawned agent',
-      'Use action "continue" with a returned childSessionId to Build on a child\'s existing context. for replying spawned subagents, or clarifying workdone',
-      'Every continue target must be unique within one spawn call.',
-      'when assigning multiple tasks parallize, use one spawn call with multiple entries, instead of multiple spawn calls; tasks share one concurrency pool. ',
+      'Use spawn for delegating tasks to subagents. Parallelize multiple agents in a single spawn call.',
+      'Each spawn.tasks[] entry is an agent with its own context that will either be new with action: "create" or build upon their existing context with action: "continue" and its childSessionId.',
+      'Use spawn.context to share context across all tasks in the same spawn call',
     ],
     parameters: spawnParameters,
     async execute(_toolCallId, params, signal, onUpdate, ctx): Promise<AgentToolResult<SpawnToolDetails>> {
