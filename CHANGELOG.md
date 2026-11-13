@@ -1,5 +1,11 @@
 # @0xkahi/pi-arsenal
 
+## 0.3.13
+
+### Patch Changes
+
+- ab5d860: ci: publish via npm trusted publishing (OIDC)
+
 ## 0.3.12
 
 ### Patch Changes
