@@ -163,7 +163,7 @@ Availability is resolved at session start after arsenal config initialization. `
 
 When Multiverse is enabled, `/multiverse` and its Pi Vim key event open the same Vim-navigable modal with three tabs: **Switch Agents**, **Presets**, and **Child Sessions**.
 
-The **Switch Agents** tab selects Default or Megamind and starts on the currently active persona. A successful selection is persisted in an `arsenal-parent-agent` entry, updates the displayed agent name, and applies the matching prompt/tool policy to the next turn. In a child session both choices are visibly disabled. The **Child Sessions** tab is a coming-soon placeholder.
+The **Switch Agents** tab selects Default or Megamind and starts on the currently active persona. A successful selection is persisted in an `arsenal-parent-agent` entry, updates the displayed agent name, and applies the matching prompt/tool policy to the next turn. In a child session both choices are visibly disabled. The **Child Sessions** tab browses recorded child transcripts.
 
 The **Presets** tab lists the built-in `[default]` first, then every configured preset, grouped with one preview row per available registered agent:
 
@@ -182,6 +182,18 @@ The effective selection is marked `(active)` and focused when the tab opens. Row
 Controls follow the rest of the modal: `Tab`/`Shift+Tab` cycle tabs, `j`/`k` (and page/first/last motions) move between presets, `Enter` activates the focused preset and closes the modal, `Esc` cancels and leaves the selection unchanged. When a preset's agent rows exceed the viewport, scrolling reaches every row. Preset switching is disabled in child sessions, where confirmation has no effect: the tab controls what the parent dispatches, not the current child's own model. Switching a preset changes no persona, parent model, or agent availability.
 
 The command and key-event handler are activated only after enabled configuration is resolved at `session_start`; disabled Multiverse does not expose them.
+
+## Child Sessions
+
+Lists this parent's children with resumable checkpoints reachable on the active parent branch, once each. Abandoned-branch and other-parent children are excluded. Newest checkpoint first; ties sort by child session id. Rows show last use (`[DD-MM-YYYY HH:MM:SS]`, always the local date and 24-hour time, dim), agent, session id, provider/model and thinking level (`—` when unknown). Missing or corrupt files are marked unavailable; opening them shows an error.
+
+Spend-line legend: `↑` input, `↓` output, ` [ READ  WRITE hit%]` cache read/write tokens and latest reply's one-decimal hit rate (Nerd Font glyphs ` `, ` `, ` `), `$` total cost, then `percent/window` context usage at the last reply. Counts use `k`/`M`; zero segments may be omitted. Context uses one decimal (`71.2%/100k`); unknown usage is `?/window`, or `?` without a known window. Cost has three decimals. Segments are dim; raw context usage strictly above 70% is warning-colored, above 90% error-colored.
+
+Keys: `Tab`/`Shift+Tab` cycle tabs; `j/k` or arrows navigate, `Ctrl+u/d` page, `gg/G` jump to bounds. `Enter` **Transcript** opens the selected child (no action in an empty list). The transcript uses dim bracketed timestamps followed by `[kind] [title]` breadcrumbs: the first label is bold heading-colored, later labels use the `toolTitle` color, and brackets dim. A tool-call header shows the tool-call id after the labels. Errors add an `[error]` breadcrumb, not a red body. Selection colors only the arrow gutter. Bodies use terminal-default text indented six columns; long bodies wrap and show a dim hidden-line counter. Recorded order is preserved through the checkpoint. Transcript hints show the Vim scrolling motions first, then `Enter` **View Content** on a truncated item, `y` **Copy**, `Tab` **Switch**, and `Esc` **Back**. `Enter` opens the full preview; `y` copies a transcript item or preview. Copy uses Pi's clipboard helper, normalizing CRLF to LF and trimming leading newlines and trailing whitespace. A transient notice replaces the hint row: **Copied N characters** in success color, **Nothing to copy** in warning color for empty content, or **Copy failed: message** in error color. Hint keys and separators are dim; descriptions muted.
+
+Preview hints show the same Vim scrolling motions first, then `/` **Search**, `n/N` **Next/Previous**, `y` **Copy**, `Tab` **Switch**, and `Esc` **Back**. While entering a search, `Enter` **Confirm** keeps the query and `Esc` **Clear** clears it. Otherwise `Esc` (or `q`) returns to the transcript, then the list, retaining selection; at the list it closes the modal.
+
+Everything is read-only and snapshot-based: viewing never writes session files or the index. Reopen the modal to refresh; an in-flight spawn appears only after its result is recorded on the parent branch.
 
 ## The `spawn` tool
 
@@ -254,6 +266,6 @@ Multiverse reports no account of which files a child changed. All bundled subage
 - No second `tool_call` guard: an enabled council may still connect even if its tools are inactive.
 - No file-touch reporting at all: use the child's session file or the working tree.
 - Parent crashes may leave an interaction without a reference; it is preserved but not imported.
-- The Child Sessions modal tab is a placeholder; browsing or attaching to child sessions remains future work.
+- Child Sessions is a read-only snapshot; attaching to children and live refresh are not supported.
 
 The approved Megamind content and builder live together in `src/extensions/multiverse/orchestrator/orchestrator-prompts/megamind.ts`. Megamind eligibility depends on enabled Multiverse and an available registered roster, not an introduction placeholder. Spawn execution reads the current model, thinking level, config, and active parent branch while reusing registry lookups.

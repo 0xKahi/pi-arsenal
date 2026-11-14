@@ -6,7 +6,7 @@
  *
  * Input routing order:
  *   1. A text-focused top layer receives every raw key except shell-reserved
- *      Esc, which pops the layer.
+ *      Esc, which pops the layer unless its optional Escape hook consumes it.
  *   2. Tab/Shift+Tab cycles tabs (wrapping, scheme reset).
  *   3. The navigation scheme maps a key to a semantic action; `dismiss` pops
  *      the active tab's top layer, or completes the dialog with the cancel
@@ -125,8 +125,9 @@ export class ModalDialog<TResult> implements Component, Focusable {
   public handleInput(data: string): void {
     const layer = this.topLayer();
     if (layer?.inputPolicy === 'text-focused') {
-      if (matchesKey(data, Key.escape)) this.dismiss();
-      else layer.handleInput(data);
+      if (matchesKey(data, Key.escape)) {
+        if (!layer.handleEscape?.()) this.dismiss();
+      } else layer.handleInput(data);
       this.tui.requestRender();
       return;
     }
@@ -258,7 +259,8 @@ export class ModalDialog<TResult> implements Component, Focusable {
     const noticeLines = this.renderedNoticeCount();
     const captionLines = this.filterInput === undefined ? 0 : (this.activeTab.filterCaption?.().length ?? 0);
     // frame rules (2) + strip (1) + blanks around content (2) + footer (1) + filter input row (1 when present)
-    const chrome = 2 + 1 + 2 + 1 + titleLines + noticeLines + captionLines + (this.filterInput === undefined ? 0 : 1);
+    const chrome =
+      2 + 1 + 2 + (this.topLayer()?.rendersHints ? 0 : 1) + titleLines + noticeLines + captionLines + (this.filterInput === undefined ? 0 : 1);
     return Math.max(1, budget - chrome);
   }
 
@@ -279,6 +281,12 @@ export class ModalDialog<TResult> implements Component, Focusable {
       lines.push(...this.filterInput.render(width), '');
     }
 
+    const layer = this.topLayer();
+    if (layer?.rendersHints) {
+      const trail: Hint[] = this.options.tabs.length > 1 ? [['Tab', 'Switch']] : [];
+      trail.push(['Esc', 'Back']);
+      layer.setShellHints?.(this.scheme.hints('Scroll'), trail);
+    }
     const content = this.content().render(width, contentHeight);
     if (contentHeight !== undefined) {
       if (this.height !== 'fit') while (content.length < contentHeight) content.push('');
@@ -286,7 +294,7 @@ export class ModalDialog<TResult> implements Component, Focusable {
     }
     lines.push(...content, '');
 
-    lines.push(singleLine(hintRow(this.theme, this.footerHints()), width));
+    if (!this.topLayer()?.rendersHints) lines.push(singleLine(hintRow(this.theme, this.footerHints()), width));
     return lines;
   }
 

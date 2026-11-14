@@ -74,7 +74,7 @@ Each explicit parent-agent switch SHALL append an `arsenal-parent-agent` custom 
 - **THEN** it uses Default without restoring or rewriting that preference and without issuing a roster warning
 
 ### Requirement: Multiverse persona-switching modal
-While Multiverse is enabled, the system SHALL register a `/multiverse` command and matching `PI_VIM_KEY_EVENT` that open the same TUI modal. The modal SHALL use Vim navigation and contain `[Switch Agents]`, `[Presets]`, and `[Child Sessions]` tabs. The child-sessions tab SHALL display a coming-soon placeholder in V1. The switch tab SHALL list Default and Megamind and initially select the active persona. Selecting Megamind SHALL append its prompt and activate the batch tool from the next turn. Selecting Default SHALL remove the contribution and deactivate the tool from the next turn. Each successful persona selection SHALL append the durable preference and update the displayed agent name. A running turn SHALL retain the persona with which it started. The Presets tab SHALL offer model lineup inspection and non-persistent selection as specified by multiverse-presets, independently of persona selection.
+While Multiverse is enabled, the system SHALL register a `/multiverse` command and matching `PI_VIM_KEY_EVENT` that open the same TUI modal. The modal SHALL use Vim navigation and contain `[Switch Agents]`, `[Presets]`, and `[Child Sessions]` tabs. The child-sessions tab SHALL provide the child session list and transcript view specified by multiverse-child-session-view. The switch tab SHALL list Default and Megamind and initially select the active persona. Selecting Megamind SHALL append its prompt and activate the batch tool from the next turn. Selecting Default SHALL remove the contribution and deactivate the tool from the next turn. Each successful persona selection SHALL append the durable preference and update the displayed agent name. A running turn SHALL retain the persona with which it started. The Presets tab SHALL offer model lineup inspection and non-persistent selection as specified by multiverse-presets, independently of persona selection.
 
 #### Scenario: Switching to Megamind
 - **WHEN** a Default parent switches to Megamind
@@ -89,8 +89,8 @@ While Multiverse is enabled, the system SHALL register a `/multiverse` command a
 - **THEN** the same three-tab modal opens with Vim navigation
 
 #### Scenario: Child sessions placeholder
-- **WHEN** the user opens the Child Sessions tab in V1
-- **THEN** the modal displays a coming-soon message without offering session actions
+- **WHEN** the user opens the Child Sessions tab
+- **THEN** no coming-soon placeholder is shown; the modal lists the child sessions reachable on the active parent branch and lets the user open a child's transcript
 
 #### Scenario: Preset switching is separate from persona switching
 - **WHEN** a parent selects a preset through the Presets tab

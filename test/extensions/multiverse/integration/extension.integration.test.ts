@@ -2,13 +2,16 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { type ExtensionAPI, type ExtensionContext, SessionManager } from '@earendil-works/pi-coding-agent';
+import { type ExtensionAPI, type ExtensionContext, type KeybindingsManager, SessionManager, type Theme } from '@earendil-works/pi-coding-agent';
 import type { ConfigProvider } from '../../../../src/config/config-loader.ts';
 import { SubagentIdentityHandler } from '../../../../src/extensions/multiverse/agents/session-identity.ts';
 import { registerMultiverse } from '../../../../src/extensions/multiverse/multiverse.extension.ts';
+import { runSpawn } from '../../../../src/extensions/multiverse/orchestrator/spawn-orchestrator.ts';
 import { ChildRuntime } from '../../../../src/extensions/multiverse/runtime/child-runtime.ts';
 import { ChildSessionRepository } from '../../../../src/extensions/multiverse/runtime/child-session-repository.ts';
+import type { createSpawnTool } from '../../../../src/extensions/multiverse/tools/spawn/spawn.tool.ts';
 import { SPAWN_TOOL_NAME } from '../../../../src/extensions/multiverse/tools/spawn/spawn.tool.ts';
+import type { ModalComponentFactory, ModalDialog } from '../../../../src/libs/modal';
 import { MultiverseConfigSchema } from '../../../../src/schemas/multiverse.config.schema.ts';
 import { type FakeModelServer, startFakeModelServer } from './fake-model-server.ts';
 
@@ -72,10 +75,17 @@ describe('Multiverse activation against real session files', () => {
     const notifications: string[] = [];
     const handlers = new Map<string, (event: never, ctx: ExtensionContext) => unknown>();
 
+    let command: ((args: string, ctx: ExtensionContext) => Promise<void>) | undefined;
+    let spawnTool: ReturnType<typeof createSpawnTool>;
+    let modal: ModalDialog<unknown> | undefined;
     const pi = {
       on: (name: string, handler: (event: never, ctx: ExtensionContext) => unknown) => handlers.set(name, handler),
-      registerCommand: () => {},
-      registerTool: () => {},
+      registerCommand: (_name: string, spec: { handler: typeof command }) => {
+        command = spec.handler;
+      },
+      registerTool: (tool: typeof spawnTool) => {
+        spawnTool = tool;
+      },
       getAllTools: () => HOST_TOOLS.map(name => ({ name })),
       getActiveTools: () => activeTools,
       setActiveTools: (names: string[]) => {
@@ -88,12 +98,24 @@ describe('Multiverse activation against real session files', () => {
     const ctx = {
       mode: 'tui',
       cwd,
-      model: { provider: 'groq', id: 'test-model' },
+      model: server.model,
       thinkingLevel: 'off',
-      modelRegistry: {},
+      modelRegistry: { find: () => server.model, getApiKeyAndHeaders: async () => ({ ok: true, apiKey: 'test-key' }) },
       sessionManager: options.sessionManager,
       isProjectTrusted: () => true,
-      ui: { notify: (message: string) => notifications.push(message) },
+      ui: {
+        notify: (message: string) => notifications.push(message),
+        custom: (factory: ModalComponentFactory<unknown>) => {
+          modal = factory(
+            { terminal: { rows: 48 }, requestRender: () => {} } as never,
+            { fg: (_tone: string, text: string) => text, bold: (text: string) => text } as Theme,
+            { matches: () => false } as unknown as KeybindingsManager,
+            () => {},
+            'inline',
+          ) as ModalDialog<unknown>;
+          return Promise.resolve({ action: 'close' });
+        },
+      },
     } as unknown as ExtensionContext;
 
     const activation = registerMultiverse(pi, {
@@ -101,11 +123,30 @@ describe('Multiverse activation against real session files', () => {
       definitionsDirectory,
       globalAgentsDirectory: options.globalAgentsDirectory,
       repository: new ChildSessionRepository({ root }),
+      spawnRun: (input, deps, options) => runSpawn(input, { ...deps, runtime: new ChildRuntime({ agentDir: server.agentDir }) }, options),
     });
 
     return {
       activation,
       notifications,
+      spawn: () =>
+        spawnTool.execute(
+          'spawn-test',
+          { context: 'modal context', tasks: [{ action: 'create', agent: 'explorer', task: 'modal prompt' }] },
+          undefined,
+          undefined,
+          {
+            ...ctx,
+            tools: [],
+            executeTool: async () => {
+              throw new Error('Not used');
+            },
+          } as never,
+        ),
+      open: async () => {
+        await command?.('', ctx);
+        return modal;
+      },
       start: () => handlers.get('session_start')?.({} as never, ctx),
       turn: () => {
         const event = { systemPrompt: 'HOST PROMPT', systemPromptOptions: { sections: {} as Record<string, string> } };
@@ -115,6 +156,57 @@ describe('Multiverse activation against real session files', () => {
       tools: () => activeTools,
     };
   };
+
+  it('lists a spawned child and opens its persisted transcript from the command', async () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'arsenal-modal-parent-'));
+    try {
+      const parent = SessionManager.create(cwd, directory);
+      const h = harness({ sessionManager: parent });
+      h.start();
+      server.script({ text: 'modal child reply' });
+      const result = await h.spawn();
+      expect(result.details?.interactions[0]?.status).toBe('success');
+      parent.appendMessage({
+        role: 'toolResult',
+        toolCallId: 'spawn-test',
+        toolName: 'spawn',
+        content: result.content,
+        details: JSON.parse(JSON.stringify(result.details)),
+        isError: false,
+        timestamp: Date.now(),
+      });
+      const modal = await h.open();
+      expect(modal).toBeDefined();
+      modal?.handleInput('\t');
+      modal?.handleInput('\t');
+      expect(modal?.render(160).join('\n')).toContain(result.details?.interactions[0]?.childSessionId as string);
+      modal?.handleInput('\r');
+      const transcript = modal?.render(160).join('\n');
+      expect(transcript).toContain('modal prompt');
+      expect(transcript).toContain('modal child reply');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('opens the modal with no children when branch snapshot building throws', async () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'arsenal-modal-parent-'));
+    try {
+      const parent = SessionManager.create(cwd, directory);
+      const h = harness({ sessionManager: parent });
+      h.start();
+      parent.getBranch = () => {
+        throw new Error('branch unavailable');
+      };
+      const modal = await h.open();
+      expect(modal).toBeDefined();
+      modal?.handleInput('\t');
+      modal?.handleInput('\t');
+      expect(modal?.render(160).join('\n')).toContain('No child sessions on this branch.');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
 
   it('restores a child role from a persisted session file and applies its tool policy', () => {
     const harnessed = harness({ sessionManager: SessionManager.open(childSessionFile) });

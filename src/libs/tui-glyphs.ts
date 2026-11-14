@@ -5,8 +5,11 @@
  * arsenal renders the same vocabulary instead of each extension redeclaring its own (or
  * importing another extension's internals).
  *
- * Plain Unicode only: Nerd Font glyphs render as tofu without a patched font.
+ * Status/tree symbols use plain Unicode; cache glyphs match pi-qol and require a Nerd Font.
  */
+
+/** pi-qol-compatible spend-line cache glyphs (spacing is significant). */
+export const CACHE_GLYPHS = { cache: '\uf49b ', cacheRead: '\uea70 ', cacheWrite: '\uf448 ' } as const;
 
 export const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const;
 
