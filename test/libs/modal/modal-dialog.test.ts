@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { KeybindingsManager, Theme } from '@earendil-works/pi-coding-agent';
 import type { TUI } from '@earendil-works/pi-tui';
 import {
+  BlockListLayer,
   ModalDialog,
   type ModalLayer,
   type ModalTab,
@@ -51,6 +52,39 @@ class RecordingLayer implements ModalLayer {
     return [];
   }
 }
+
+test('self-rendered layer hints retain shell order and copy status replaces the row', async () => {
+  let context: ModalTabContext | undefined;
+  const dialog = new ModalDialog(tui, theme, keybindings, {
+    tabs: [makeTab([], [], value => (context = value)), makeTab([], [])],
+    navigation: new VimNavigationScheme(),
+    cancelValue: undefined,
+    onComplete: () => {},
+  });
+  const layer = new BlockListLayer(theme, {
+    title: 'Blocks',
+    blocks: ['body'],
+    header: () => 'Header',
+    body: block => [block],
+    onOpen: () => {},
+    copy: () => {},
+  });
+  context?.pushLayer(layer);
+  const row = dialog.render(240).find(line => line.includes('y Copy')) ?? '';
+  expect(row).toContain('Scroll');
+  expect(row).toContain('Tab Switch');
+  expect(row).toContain('Esc Back');
+  expect(row.indexOf('Scroll')).toBeLessThan(row.indexOf('y Copy'));
+  expect(row.indexOf('y Copy')).toBeLessThan(row.indexOf('Tab Switch'));
+  expect(row.indexOf('Tab Switch')).toBeLessThan(row.indexOf('Esc Back'));
+  expect(layer.hints()).toEqual([['y', 'Copy']]);
+  layer.handleInput('y');
+  await Promise.resolve();
+  const output = dialog.render(240).join('\n');
+  expect(output).toContain('Copied 4 characters');
+  expect(output).not.toContain('Esc Back');
+  layer.dispose();
+});
 
 describe('ModalDialog height policies', () => {
   test('fit keeps short inline content natural while half pads to its budget', () => {

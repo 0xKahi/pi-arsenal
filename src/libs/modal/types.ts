@@ -32,6 +32,10 @@ export type ModalLayerInputPolicy = 'navigation-first' | 'text-focused';
 
 /** Content layer pushed above a tab, for example a scrollable preview. */
 export interface ModalLayer {
+  /** Layer renders its own hint/notice row instead of the shell footer. */
+  readonly rendersHints?: boolean;
+  /** Shell hints surrounding the layer-owned hints row. */
+  setShellHints?(lead: Hint[], trail: Hint[]): void;
   /** Defaults to navigation-first. Text-focused layers receive raw keys except Esc. */
   readonly inputPolicy?: ModalLayerInputPolicy;
   /** Optional focus plumbing for layers that contain a cursor-bearing input. */
@@ -40,6 +44,8 @@ export interface ModalLayer {
   handleInput(data: string): void;
   handleNavigation(action: NavigationAction): void;
   hints(): Hint[];
+  /** Return true to consume Esc (for example, clearing a preview query). */
+  handleEscape?(): boolean;
   invalidate?(): void;
   dispose?(): void;
 }

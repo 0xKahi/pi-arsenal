@@ -1,9 +1,11 @@
 import type { ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
 import type { ModalComponentFactory, ModalTab } from '../../../libs/modal';
-import { fitLine, ListTab, ModalDialog, presentModal, VimNavigationScheme } from '../../../libs/modal';
+import { ListTab, ModalDialog, presentModal, VimNavigationScheme } from '../../../libs/modal';
 import type { SessionRole } from '../agents/session-role-state.ts';
 import type { PresetSelection } from '../agents/subagent-model-resolver.ts';
+import type { ChildSessionSnapshot } from '../child-sessions/child-session-projection.ts';
 import { PARENT_AGENTS, type ParentAgent } from '../orchestrator/parent-agent.ts';
+import { ChildSessionsTab } from './child-sessions-tab.ts';
 import { type MultiverseAgentPresetTabState, PresetsTab } from './multiverse-agent-preset-tab.ts';
 
 export type MultiverseModalResult =
@@ -15,6 +17,7 @@ export interface MultiverseModalState {
   activeAgent: ParentAgent;
   role: SessionRole;
   megamindAvailable: boolean;
+  childSessions: ChildSessionSnapshot[];
   presets?: MultiverseAgentPresetTabState;
 }
 
@@ -32,13 +35,7 @@ export function buildMultiverseModalFactory(state: MultiverseModalState): ModalC
       hints: () => [['Enter', 'Switch']],
     });
 
-    const childSessionsTab: ModalTab = {
-      label: 'Child Sessions',
-      render: width => [fitLine(theme.fg('muted', '  Coming soon.'), width)],
-      handleInput: () => {},
-      handleNavigation: () => {},
-      hints: () => [],
-    };
+    const childSessionsTab = new ChildSessionsTab(theme, state.childSessions, undefined, () => tui.requestRender());
 
     const tabs: ModalTab[] =
       state.presets === undefined

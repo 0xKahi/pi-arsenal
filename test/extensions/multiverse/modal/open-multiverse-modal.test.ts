@@ -44,8 +44,13 @@ function presetOptions() {
   ];
 }
 
-function dialog(state: Parameters<typeof buildMultiverseModalFactory>[0], results: MultiverseModalResult[] = []): ModalDialog<MultiverseModalResult> {
-  return buildMultiverseModalFactory(state)(
+function dialog(
+  state: Omit<Parameters<typeof buildMultiverseModalFactory>[0], 'childSessions'> & {
+    childSessions?: Parameters<typeof buildMultiverseModalFactory>[0]['childSessions'];
+  },
+  results: MultiverseModalResult[] = [],
+): ModalDialog<MultiverseModalResult> {
+  return buildMultiverseModalFactory({ childSessions: [], ...state })(
     tui as never,
     theme,
     keybindings,
@@ -64,10 +69,33 @@ describe('Multiverse modal', () => {
     expect(rendered).toContain('[accent]> [/accent][accent]Megamind[/accent][success] (active)[/success]');
   });
 
-  it('switches tabs with Tab and renders the child-session placeholder', () => {
+  it('switches tabs with Tab and renders the child-session empty state', () => {
     const modal = dialog({ activeAgent: 'default', role: parentRole, megamindAvailable: true });
     modal.handleInput('\t');
-    expect(modal.render(60).join('\n')).toContain('Coming soon.');
+    expect(modal.render(60).join('\n')).toContain('No child sessions on this branch.');
+  });
+
+  it('renders populated child sessions instead of a placeholder', () => {
+    const modal = dialog({
+      activeAgent: 'default',
+      role: parentRole,
+      megamindAvailable: true,
+      childSessions: [
+        {
+          status: 'unavailable',
+          childSessionId: 'recorded-child',
+          childSessionFile: '/missing',
+          agent: 'fixer',
+          lastUsed: null,
+          reason: 'Missing file',
+        },
+      ],
+    });
+    modal.handleInput('\t');
+    const rendered = modal.render(160).join('\n');
+    expect(rendered).toContain('recorded-child');
+    expect(rendered).toContain('[error]unavailable[/error]');
+    expect(rendered).not.toContain('Coming soon');
   });
 
   it('uses Vim navigation and returns the selected parent persona', () => {
@@ -248,7 +276,7 @@ describe('Multiverse modal', () => {
     expect(modal.render(100).join('\n')).toContain('Presets');
     expect(modal.render(100).length).toBeLessThan(12);
     modal.handleInput('\t');
-    expect(modal.render(100).join('\n')).toContain('Coming soon.');
+    expect(modal.render(100).join('\n')).toContain('No child sessions on this branch.');
     expect(modal.render(100).length).toBeLessThan(12);
     modal.handleInput('\u001b[Z');
     expect(modal.render(100).join('\n')).toContain('Presets');
@@ -264,7 +292,7 @@ describe('Multiverse modal', () => {
         },
       },
     };
-    await openMultiverseModal(ctx as never, { activeAgent: 'default', role: parentRole, megamindAvailable: true });
+    await openMultiverseModal(ctx as never, { childSessions: [], activeAgent: 'default', role: parentRole, megamindAvailable: true });
     expect(options).toEqual([undefined]);
   });
 });

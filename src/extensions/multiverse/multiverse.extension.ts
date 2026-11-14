@@ -10,6 +10,7 @@ import type { SubagentDefinition } from './agents/subagent-definition.ts';
 import { type PresetSelection, SubAgentModelResolver } from './agents/subagent-model-resolver.ts';
 import { discoverOrderedSubagentPaths, SUBAGENT_PROMPTS_DIRECTORY } from './agents/subagent-paths.ts';
 import { SubAgentRegistry } from './agents/subagent-registry.ts';
+import { buildChildSessionSnapshots, type ChildSessionSnapshot } from './child-sessions/child-session-projection.ts';
 import { AGENT_COLORS, COMMAND_NAME, MULTIVERSE_DEBUG, PI_VIM_KEY_EVENT_ID } from './constants.ts';
 import { openMultiverseModal } from './modal/open-multiverse-modal.ts';
 import { buildMegamindPrompt } from './orchestrator/orchestrator-prompts/megamind.ts';
@@ -237,7 +238,14 @@ function activateMultiverse(pi: ExtensionAPI, dependencies: MultiverseDependenci
       };
     };
 
+    let childSessions: ChildSessionSnapshot[] = [];
+    try {
+      childSessions = buildChildSessionSnapshots(ctx.sessionManager.getBranch(), {
+        findContextWindow: (provider, model) => ctx.modelRegistry.find(provider, model)?.contextWindow,
+      });
+    } catch {}
     const result = await openMultiverseModal(ctx, {
+      childSessions,
       activeAgent: parentAgentState.getActive(),
       role: roleState.get(),
       megamindAvailable: subAgents.availableSubAgents.length > 0,
