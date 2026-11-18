@@ -1,5 +1,11 @@
 # @0xkahi/pi-arsenal
 
+## 0.4.1
+
+### Patch Changes
+
+- 00f6365: Preview and apply a Multiverse preset's `megamind` model and reasoning settings when you confirm it in the picker. Selecting a default preset at startup still leaves the parent session unchanged.
+
 ## 0.4.0
 
 ### Minor Changes
