@@ -232,6 +232,7 @@ function activateMultiverse(pi: ExtensionAPI, dependencies: MultiverseDependenci
         options: selections.map(selection => ({
           selection,
           agents: agentNames.map(name => ({ name, model: resolver.resolveModel(name, selection) })),
+          parentOverride: resolver.presetOverride('megamind', selection),
         })),
         parentModel: ctx.model ? { provider: ctx.model.provider, id: ctx.model.id } : undefined,
         parentReasoning: ctx.thinkingLevel as ReasoningLevel | undefined,
@@ -260,6 +261,41 @@ function activateMultiverse(pi: ExtensionAPI, dependencies: MultiverseDependenci
     if (result.action === 'select') selectParentAgent(result.agent);
     // Keep preset selection parent-only even if a stale or synthetic modal result is returned.
     if (result.action === 'select-preset' && roleState.get().kind === 'parent') {
+      const override = runtime.modelResolver.presetOverride('megamind', result.selection);
+      if (override) {
+        // Pi's setModel resets reasoning, so capture the prior level first and reapply it afterwards.
+        const prior = pi.getThinkingLevel();
+        if (override.provider !== undefined || override.modelId !== undefined) {
+          // Fill a missing half of the pair from the live host.
+          const provider = override.provider ?? ctx.model?.provider;
+          const modelId = override.modelId ?? ctx.model?.id;
+          let target: ReturnType<ExtensionContext['modelRegistry']['find']>;
+          try {
+            target = provider && modelId ? ctx.modelRegistry.find(provider, modelId) : undefined;
+          } catch {
+            target = undefined;
+          }
+          if (!target) {
+            ctx.ui.notify(`multiverse: parent model ${provider ?? '?'}/${modelId ?? '?'} was not found; preset not applied.`, 'error');
+            return;
+          }
+          let switched = false;
+          try {
+            switched = await pi.setModel(target);
+          } catch {}
+          if (!switched) {
+            ctx.ui.notify(
+              `multiverse: could not switch parent to ${provider}/${modelId} (missing authorization or refused); preset not applied.`,
+              'error',
+            );
+            return;
+          }
+        }
+        // Pi clamps the level to what the current model supports.
+        const switchedModel = override.provider !== undefined || override.modelId !== undefined;
+        const level = override.reasoning ?? (switchedModel ? prior : undefined);
+        if (level !== undefined) pi.setThinkingLevel(level as ReturnType<ExtensionAPI['getThinkingLevel']>);
+      }
       runtime.modelResolver.select(result.selection);
     }
   };

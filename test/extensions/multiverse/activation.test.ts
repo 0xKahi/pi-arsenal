@@ -83,6 +83,13 @@ describe('Multiverse activation lifecycle', () => {
     let modalResult: unknown = { action: 'close' };
     let modalOpenCount = 0;
     let tool: { execute: (id: string, input: never, signal: undefined, update: undefined, ctx: ExtensionContext) => Promise<unknown> };
+    const host = {
+      calls: [] as string[],
+      level: 'low',
+      model: { provider: 'one', id: 'model' },
+      refuse: false,
+      clamp: undefined as ((level: string) => string) | undefined,
+    };
     const pi = {
       on: (name: string, handler: (event: never, ctx: ExtensionContext) => unknown) => handlers.set(name, handler),
       registerCommand: (_name: string, value: typeof command) => {
@@ -94,6 +101,18 @@ describe('Multiverse activation lifecycle', () => {
       getAllTools: () => {
         if (!bound) throw new Error('runtime API called during factory load');
         return ['read', 'external', 'spawn'].map(name => ({ name }));
+      },
+      getThinkingLevel: () => host.level,
+      setThinkingLevel: (level: string) => {
+        host.calls.push(`level:${level}`);
+        host.level = host.clamp?.(level) ?? level;
+      },
+      setModel: async (model: { provider: string; id: string }) => {
+        host.calls.push(`model:${model.provider}/${model.id}`);
+        if (host.refuse) return false;
+        host.model = model;
+        host.level = 'off'; // Pi resets reasoning on a model switch.
+        return true;
       },
       getActiveTools: () => active,
       setActiveTools: (names: string[]) => {
@@ -110,9 +129,21 @@ describe('Multiverse activation lifecycle', () => {
     const ctx = {
       mode: 'tui',
       cwd: '/tmp/project',
-      model: { provider: 'one', id: 'model' },
-      thinkingLevel: 'low',
-      modelRegistry: {},
+      get model() {
+        return host.model;
+      },
+      set model(value) {
+        host.model = value;
+      },
+      get thinkingLevel() {
+        return host.level;
+      },
+      set thinkingLevel(value) {
+        host.level = value;
+      },
+      modelRegistry: {
+        find: (provider: string, id: string) => (provider === 'two' || id === 'model' ? { provider, id } : undefined),
+      },
       isProjectTrusted: () => options.trusted ?? true,
       sessionManager: { getEntries: () => entries, getBranch: () => branch, getSessionId: () => 'parent' },
       ui: {
@@ -148,6 +179,7 @@ describe('Multiverse activation lifecycle', () => {
       ctx,
       selections,
       notifications,
+      host,
       agentNameEvents,
       executions,
       entries,
@@ -394,6 +426,168 @@ describe('Multiverse activation lifecycle', () => {
     Object.assign(settings, { presets: { smart: { researcher: { modelId: 'smart-model', reasoning: 'high' } } } });
     await runtime.spawn();
     expect(runtime.executions[3]?.subagentModel('researcher')).toEqual({ provider: 'base', modelId: 'base-model', reasoning: 'low' });
+  });
+
+  describe('explicit parent model action', () => {
+    const configured = (runtime: ReturnType<typeof setup>, presets: Record<string, unknown>, defaultAgent: 'default' | 'megamind' = 'megamind') => {
+      const settings = MultiverseConfigSchema.parse({ enabled: true, defaultAgent });
+      Object.assign(settings, { presets });
+      runtime.setConfig(settings);
+      runtime.start();
+    };
+    const confirm = async (runtime: ReturnType<typeof setup>, name: string) => {
+      runtime.setModalResult({ action: 'select-preset', selection: { kind: 'named', name } });
+      await runtime.command()?.handler('', runtime.ctx);
+    };
+
+    for (const persona of ['default', 'megamind'] as const) {
+      it(`switches model before reasoning in the ${persona} persona and retains prior reasoning`, async () => {
+        const runtime = setup([], true, persona);
+        configured(runtime, { smart: { megamind: { provider: 'two', modelId: 'big' }, fixer: { modelId: 'x' } } }, persona);
+        await confirm(runtime, 'smart');
+        expect(runtime.host.calls).toEqual(['model:two/big', 'level:low']);
+        expect(runtime.host.level).toBe('low');
+        expect(runtime.activation.parentAgentState.getActive()).toBe(persona);
+      });
+    }
+
+    it('applies explicit reasoning after the model and clamps via the host', async () => {
+      const runtime = setup();
+      runtime.host.clamp = () => 'medium';
+      configured(runtime, { smart: { megamind: { provider: 'two', modelId: 'big', reasoning: 'xhigh' } } });
+      await confirm(runtime, 'smart');
+      expect(runtime.host.calls).toEqual(['model:two/big', 'level:xhigh']);
+      expect(runtime.host.level).toBe('medium');
+    });
+
+    it('applies reasoning alone without a model lookup or switch', async () => {
+      const runtime = setup();
+      configured(runtime, { smart: { megamind: { reasoning: 'high' } } });
+      await confirm(runtime, 'smart');
+      expect(runtime.host.calls).toEqual(['level:high']);
+    });
+
+    it('fills a missing provider from the live model', async () => {
+      const runtime = setup();
+      configured(runtime, { smart: { megamind: { modelId: 'model' } } });
+      await confirm(runtime, 'smart');
+      expect(runtime.host.calls).toEqual(['model:one/model', 'level:low']);
+    });
+
+    it('reports lookup failure without touching the host or lineup', async () => {
+      const runtime = setup();
+      configured(runtime, { smart: { megamind: { provider: 'nope', modelId: 'missing', reasoning: 'high' } } });
+      await confirm(runtime, 'smart');
+      expect(runtime.host.calls).toEqual([]);
+      expect(runtime.notifications.join('\n')).toContain('nope/missing');
+      expect(runtime.turn().contribution).toBeDefined();
+      runtime.setModalResult({ action: 'close' });
+    });
+
+    it('reports host refusal or missing authorization before reasoning or lineup', async () => {
+      const runtime = setup();
+      runtime.host.refuse = true;
+      configured(runtime, { smart: { researcher: { modelId: 'x' }, megamind: { provider: 'two', modelId: 'big', reasoning: 'high' } } });
+      await confirm(runtime, 'smart');
+      expect(runtime.host.calls).toEqual(['model:two/big']);
+      expect(runtime.host.level).toBe('low');
+      expect(runtime.notifications.join('\n')).toContain('missing authorization or refused');
+      await runtime.spawn('researcher');
+      expect(runtime.executions[0]?.subagentModel('researcher')?.modelId).toBeUndefined();
+    });
+
+    it('leaves the host untouched for baseline and entries without parent fields', async () => {
+      const runtime = setup();
+      configured(runtime, { smart: { fixer: { modelId: 'x' } }, blank: { megamind: {} } });
+      await confirm(runtime, 'smart');
+      await confirm(runtime, 'blank');
+      runtime.setModalResult({ action: 'select-preset', selection: { kind: 'baseline' } });
+      await runtime.command()?.handler('', runtime.ctx);
+      expect(runtime.host.calls).toEqual([]);
+    });
+
+    it('reapplies on explicit reconfirmation of the already active preset', async () => {
+      const runtime = setup();
+      configured(runtime, { smart: { megamind: { reasoning: 'high' } } });
+      await confirm(runtime, 'smart');
+      await confirm(runtime, 'smart');
+      expect(runtime.host.calls).toEqual(['level:high', 'level:high']);
+    });
+  });
+
+  describe('parent action lifecycle', () => {
+    const withPresets = (runtime: ReturnType<typeof setup>, presets: Record<string, unknown>, extra: Record<string, unknown> = {}) => {
+      const settings = MultiverseConfigSchema.parse({ enabled: true, defaultAgent: 'megamind' });
+      Object.assign(settings, { presets }, extra);
+      runtime.setConfig(settings);
+    };
+    const confirmNamed = async (runtime: ReturnType<typeof setup>, name: string) => {
+      runtime.setModalResult({ action: 'select-preset', selection: { kind: 'named', name } });
+      await runtime.command()?.handler('', runtime.ctx);
+    };
+    const presets = { smart: { megamind: { provider: 'two', modelId: 'big', reasoning: 'high' } } };
+
+    it('does not call host setters on initialization or reload with defaultPreset, but does on explicit reconfirmation', async () => {
+      const runtime = setup();
+      withPresets(runtime, presets, { defaultPreset: 'smart' });
+      runtime.start();
+      runtime.start();
+      expect(runtime.host.calls).toEqual([]);
+      await confirmNamed(runtime, 'smart');
+      expect(runtime.host.calls).toEqual(['model:two/big', 'level:high']);
+    });
+
+    it('leaves host settings untouched on persona switches, cancellation, and baseline selection', async () => {
+      const runtime = setup([], true, 'default');
+      withPresets(runtime, presets, { defaultPreset: 'smart' });
+      runtime.start();
+      for (const result of [{ action: 'select', agent: 'megamind' }, { action: 'select', agent: 'default' }, { action: 'close' }]) {
+        runtime.setModalResult(result);
+        await runtime.command()?.handler('', runtime.ctx);
+      }
+      runtime.setModalResult({ action: 'select-preset', selection: { kind: 'baseline' } });
+      await runtime.command()?.handler('', runtime.ctx);
+      expect(runtime.host.calls).toEqual([]);
+    });
+
+    it('ignores a synthetic confirmation in a child session, including after reload', async () => {
+      const runtime = setup([identity()]);
+      withPresets(runtime, presets);
+      runtime.start();
+      await confirmNamed(runtime, 'smart');
+      runtime.start();
+      await confirmNamed(runtime, 'smart');
+      expect(runtime.host.calls).toEqual([]);
+      expect(runtime.host.level).toBe('low');
+    });
+
+    it('gives later spawns the new fallback model and reasoning while fixer and a custom megamind child resolve normally', async () => {
+      for (const name of ['fixer', 'megamind']) writeFileSync(path.join(globalDirectory, `${name}.md`), userSource(name, `${name} prompt`));
+      const runtime = setup([], true, 'megamind', { globalAgentsDirectory: globalDirectory });
+      withPresets(runtime, {
+        smart: {
+          megamind: { provider: 'two', modelId: 'big', reasoning: 'high' },
+          fixer: { provider: 'fix', modelId: 'fix-model', reasoning: 'low' },
+        },
+      });
+      runtime.start();
+      await runtime.spawn('researcher');
+      expect(runtime.executions[0]?.model.id).toBe('model');
+      expect(runtime.executions[0]?.thinkingLevel).toBe('low');
+
+      runtime.setModalResult({ action: 'select-preset', selection: { kind: 'named', name: 'smart' } });
+      await runtime.command()?.handler('', runtime.ctx);
+      await runtime.spawn('researcher');
+      const next = runtime.executions[1];
+      expect(`${next?.model.provider}/${next?.model.id}`).toBe('two/big');
+      expect(next?.thinkingLevel).toBe('high');
+      expect(next?.subagentModel('researcher')).toEqual({});
+      expect(next?.subagentModel('fixer')).toEqual({ provider: 'fix', modelId: 'fix-model', reasoning: 'low' });
+      // The custom child shares the key and keeps ordinary child resolution from the same entry.
+      expect(next?.subagentModel('megamind')).toEqual({ provider: 'two', modelId: 'big', reasoning: 'high' });
+      // The earlier snapshot is unchanged.
+      expect(runtime.executions[0]?.subagentModel('fixer')).toEqual({});
+    });
   });
 
   it('uses the provider directly for the spawn execution guard', async () => {

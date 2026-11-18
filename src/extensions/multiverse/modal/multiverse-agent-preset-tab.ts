@@ -9,6 +9,8 @@ export interface MultiverseAgentPresetTabState {
   options: readonly {
     selection: PresetSelection;
     agents: readonly { name: string; model: Partial<ModelConfig> }[];
+    /** Parent switch requested on confirmation; preview only, never applied by the tab. */
+    parentOverride?: Partial<ModelConfig>;
   }[];
   parentModel?: { provider: string; id: string };
   parentReasoning?: ReasoningLevel;
@@ -48,7 +50,7 @@ export class PresetsTab implements ModalTab {
     if (this.options.length === 1) {
       const option = this.options[0];
       if (option === undefined) return;
-      const { bodyHeight, maxOffset } = this.singlePresetViewport(this.lastHeight, this.agentLines(option).length);
+      const { bodyHeight, maxOffset } = this.singlePresetViewport(this.lastHeight, this.bodyLines(option).length);
       if (action === 'step-back') this.scrollOffset = Math.max(0, this.scrollOffset - 1);
       if (action === 'step-forward') this.scrollOffset = Math.min(maxOffset, this.scrollOffset + 1);
       if (action === 'page-back') this.scrollOffset = Math.max(0, this.scrollOffset - bodyHeight);
@@ -114,7 +116,7 @@ export class PresetsTab implements ModalTab {
   private renderSinglePreset(width: number, height: number): string[] {
     const option = this.options[0];
     if (option === undefined) return [];
-    const body = this.agentLines(option);
+    const body = this.bodyLines(option);
     const { bodyHeight, maxOffset, showOverflow } = this.singlePresetViewport(height, body.length);
     this.scrollOffset = Math.min(this.scrollOffset, maxOffset);
     const lines = [this.renderHeading(option, true), ...body.slice(this.scrollOffset, this.scrollOffset + bodyHeight)];
@@ -136,17 +138,37 @@ export class PresetsTab implements ModalTab {
       const option = this.options[index];
       if (option === undefined) continue;
       lines.push(this.renderHeading(option, index === this.selected));
-      lines.push(...this.agentLines(option));
+      lines.push(...this.bodyLines(option));
     }
     return lines.map(line => fitLine(line, width));
   }
 
+  private bodyLines(option: PresetOption): string[] {
+    return [...this.parentLines(option), ...this.agentLines(option)];
+  }
+
+  private parentLines(option: PresetOption): string[] {
+    const override = option.parentOverride;
+    if (override === undefined) return [];
+    const parts: string[] = [];
+    if (override.provider !== undefined || override.modelId !== undefined) {
+      const modelId = override.modelId ?? this.state.parentModel?.id ?? 'current model';
+      const provider = override.provider ?? this.state.parentModel?.provider ?? 'current provider';
+      parts.push(`model ${safeText(modelId)} (${safeText(provider)})`);
+    }
+    if (override.reasoning !== undefined) parts.push(`reasoning ${safeText(override.reasoning)}`);
+    if (parts.length === 0) return [];
+    return [this.theme.fg('warning', `    Parent (on confirm, requested): ${parts.join(' / ')}`)];
+  }
+
   private agentLines(option: PresetOption): string[] {
     if (option.agents.length === 0) return [this.theme.fg('muted', '    No available agents.')];
+    const override = option.parentOverride;
     return option.agents.map(agent => {
-      const modelId = agent.model.modelId ?? this.state.parentModel?.id ?? 'inherits parent model';
-      const provider = agent.model.provider ?? this.state.parentModel?.provider ?? 'inherits parent provider';
-      const reasoning = agent.model.reasoning ?? this.state.parentReasoning ?? 'inherits parent reasoning';
+      // Children inherit the parent as it would be after confirmation.
+      const modelId = agent.model.modelId ?? override?.modelId ?? this.state.parentModel?.id ?? 'inherits parent model';
+      const provider = agent.model.provider ?? override?.provider ?? this.state.parentModel?.provider ?? 'inherits parent provider';
+      const reasoning = agent.model.reasoning ?? override?.reasoning ?? this.state.parentReasoning ?? 'inherits parent reasoning';
       return this.theme.fg(
         'muted',
         `    ${safeText(agent.name)}: ${safeText(modelId)} (${safeText(provider)}) / requested reasoning: ${safeText(reasoning)}`,
@@ -156,7 +178,7 @@ export class PresetsTab implements ModalTab {
 
   private headingLineIndex(optionIndex: number): number {
     let index = 0;
-    for (let i = 0; i < optionIndex; i++) index += 1 + Math.max(1, this.options[i]?.agents.length ?? 0);
+    for (const option of this.options.slice(0, optionIndex)) index += 1 + this.parentLines(option).length + Math.max(1, option.agents.length);
     return index;
   }
 

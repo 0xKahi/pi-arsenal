@@ -18,6 +18,7 @@ Multiverse adds durable parent-owned subagents, initially shipping `explorer`, `
     "defaultPreset": "smart",
     "presets": {
       "smart": {
+        "megamind": { "modelId": "claude-opus-4-5", "reasoning": "high" },
         "explorer": { "provider": "anthropic", "modelId": "claude-sonnet-4-5", "reasoning": "high" },
         "fixer": { "reasoning": "high" }
       },
@@ -122,7 +123,20 @@ Each field resolves independently:
 selected preset field  ->  subagents.<agent>.model field  ->  current parent session value
 ```
 
-In the example above, `smart` gives `fixer` only `"reasoning": "high"`. The fixer keeps whatever `provider` and `modelId` its subagent settings define, and if those are absent too, it inherits the parent session's model. An agent omitted from a preset (`visualizer`, in both presets above) behaves exactly as it does with no preset selected. The built-in default contributes no overrides at all, so switching back to it restores plain subagent behavior. Selecting a preset never rewrites configuration.
+In the example above, `smart` gives `fixer` only `"reasoning": "high"`. The fixer keeps whatever `provider` and `modelId` its subagent settings define, and if those are absent too, it inherits the parent session's model. An agent omitted from a preset (`visualizer`, in both presets above) behaves exactly as it does with no preset selected. The built-in default contributes no child overrides at all, so switching back to it restores plain subagent behavior for children; it does not restore a previous parent model or reasoning (see below). Selecting a preset never rewrites configuration.
+
+### Parent action (`megamind`)
+
+The reserved entry `megamind` in a named preset is ordinary model settings (`provider`, `modelId`, `reasoning`, all optional) that also describes the **parent** session, the live Pi session running the orchestrator, in either persona. It is applied only on an explicit confirmation of that named preset in the picker (`Enter`):
+
+- A missing `provider` or `modelId` takes the parent's current value, so `{ "modelId": "x" }` keeps the current provider. Omitted `reasoning` keeps the current level, as far as the new model supports it; a level the model cannot support is clamped by Pi.
+- Order: the model is looked up in the host model registry and switched first, then reasoning is set. A `reasoning`-only entry changes only the thinking level, with no model lookup or switch.
+- Confirming the already active preset applies it again, which is how you re-sync the parent after changing the model by hand.
+- Nothing is applied by the built-in `[default]`, by a preset with no `megamind` entry or an empty one, by `defaultPreset` at session start, reload or reopen, by persona switches, or by cancelling. Child sessions never apply it. Earlier parent settings are never restored automatically.
+- Switching lineups automatically (`defaultPreset` initialization) and switching the host model manually (this confirmation, or Pi's own model picker) are separate: the first changes only which child lineup is selected, the second changes the model and reasoning of the next parent turn.
+- Children spawned afterward that leave fields unset inherit the new parent model and reasoning. An explicitly configured child, such as `fixer` with its own `modelId`, keeps ordinary resolution. A child agent literally named `megamind` is also configured by this same entry through ordinary child resolution, so confirmation sets both the parent and that child.
+
+Example with the `smart` preset above: confirming `smart` in a parent switches the parent to `claude-opus-4-5` (current provider) at `high` reasoning, selects the lineup, and a later `fixer` spawn that has no model of its own runs on `claude-opus-4-5` with `high` reasoning. Setting `defaultPreset` to `smart` instead only selects the lineup at startup; the parent model stays as it was until you confirm `smart`.
 
 ### Selection is session-local
 
@@ -143,7 +157,7 @@ Each `spawn` call captures the active preset and the composed per-agent settings
 
 ### Requested versus runtime model
 
-The picker shows configured intent, not a guarantee. It performs no authentication or availability probe. At run time the effective configured model is tried first and the parent model remains the fallback, so an unavailable or unauthenticated preset model falls back to the parent model — a preset does not add a retry of the underlying subagent model. Likewise the reasoning shown is the *requested* level; runtime clamps it to what the model actually chosen supports. Because fields are inherited individually, a partial override can produce a provider/model pair that does not exist; the parent fallback covers it.
+The picker shows configured intent, not a guarantee. It performs no authentication or availability probe. This applies to child rows; the parent action is different and is checked only on confirmation. At run time the effective configured child model is tried first and the parent model remains the fallback, so an unavailable or unauthenticated preset model falls back to the parent model — a preset does not add a retry of the underlying subagent model. Likewise the reasoning shown is the *requested* level; runtime clamps it to what the model actually chosen supports. Because fields are inherited individually, a partial override can produce a provider/model pair that does not exist; the parent fallback covers it.
 
 ## Durable children
 
@@ -177,9 +191,22 @@ The **Presets** tab lists the built-in `[default]` first, then every configured 
     fixer: inherits parent model (inherits parent provider) / requested reasoning: high
 ```
 
-The effective selection is marked `(active)` and focused when the tab opens. Rows show the values after field inheritance; unresolved fields say `inherits parent …` rather than inventing a value. Only available registered agents appear — a preset naming a disabled or unregistered agent adds no row and no spawn target — and an empty roster shows `No available agents.` instead of fabricated entries. A configured preset literally named `default` stays selectable and is distinguished as `[default] (configured)` from the built-in `[default] (built-in)`.
+The effective selection is marked `(active)` and focused when the tab opens. A preset with parent fields adds one separately labeled line directly under its heading, before the agent rows:
 
-Controls follow the rest of the modal: `Tab`/`Shift+Tab` cycle tabs, `j`/`k` (and page/first/last motions) move between presets, `Enter` activates the focused preset and closes the modal, `Esc` cancels and leaves the selection unchanged. When a preset's agent rows exceed the viewport, scrolling reaches every row. Preset switching is disabled in child sessions, where confirmation has no effect: the tab controls what the parent dispatches, not the current child's own model. Switching a preset changes no persona, parent model, or agent availability.
+```
+> [smart] (active)
+    Parent (on confirm, requested): model claude-opus-4-5 (anthropic) / reasoning high
+    megamind: ...   <- only if a child agent named megamind exists
+    fixer: claude-opus-4-5 (anthropic) / requested reasoning: high
+```
+
+Read the `Parent (on confirm, requested)` line as the model and reasoning that pressing `Enter` would request for the parent; it names only the fields the preset supplies (a missing provider or model ID shows the current parent value). It is a request, not a claim that the model exists or is authorized, and highlighting or scrolling past it changes nothing. The agent rows are children and keep their own labels, so a child named `megamind` is a separate row from the parent line. Children that inherit a field show the value they would get after the proposed parent switch rather than the old parent value; only without a parent action do they show the current parent's values.
+
+Rows show the values after field inheritance; unresolved fields say `inherits parent …` rather than inventing a value. Only available registered agents appear — a preset naming a disabled or unregistered agent adds no row and no spawn target — and an empty roster shows `No available agents.` instead of fabricated entries. A configured preset literally named `default` stays selectable and is distinguished as `[default] (configured)` from the built-in `[default] (built-in)`.
+
+Controls follow the rest of the modal: `Tab`/`Shift+Tab` cycle tabs, `j`/`k` (and page/first/last motions) move between presets, `Enter` activates the focused preset and closes the modal, `Esc` cancels and leaves the selection unchanged. When a preset's agent rows exceed the viewport, scrolling reaches every row. Preset switching is disabled in child sessions, where confirmation has no effect: the tab controls what the parent dispatches, not the current child's own model. Switching a preset changes no persona or agent availability, and changes the parent model or reasoning only through its explicit `megamind` parent action.
+
+If the requested parent model cannot be found in the model registry, the host refuses it, or authorization is missing, the user gets an error notification (`parent model … was not found` or `could not switch parent … missing authorization or refused`), and the picker closes with no partial change: the parent keeps its prior model and reasoning, reasoning is not applied, and the previously active lineup stays selected. This failure handling applies only to the parent action; child runs keep the fallback described above.
 
 The command and key-event handler are activated only after enabled configuration is resolved at `session_start`; disabled Multiverse does not expose them.
 

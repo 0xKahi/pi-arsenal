@@ -37,11 +37,25 @@ export class SubAgentModelResolver {
 
   resolveModel(agent: string, selection: PresetSelection = this.currentSelection()): Partial<ModelConfig> {
     const subagent = Object.hasOwn(this.config.subagents, agent) ? this.config.subagents[agent]?.model : undefined;
+    const override = this.presetOverride(agent, selection);
+    // Both spreads create a fresh object and never mutate loaded configuration.
+    return { ...subagent, ...override };
+  }
+
+  /**
+   * The named preset's sparse entry for `agent`, or undefined when there is none or it is empty.
+   * Pure and shared by child resolution and the parent (`megamind`) preview and confirmation.
+   */
+  presetOverride(agent: string, selection: PresetSelection = this.currentSelection()): Partial<ModelConfig> | undefined {
     const effective = this.normalize(selection);
     const preset = effective.kind === 'named' ? this.config.presets?.[effective.name] : undefined;
     const override = preset && Object.hasOwn(preset, agent) ? preset[agent] : undefined;
-    // Both spreads create a fresh object and never mutate loaded configuration.
-    return { ...subagent, ...override };
+    if (!override) return undefined;
+    const fields: Partial<ModelConfig> = {};
+    if (override.provider !== undefined) fields.provider = override.provider;
+    if (override.modelId !== undefined) fields.modelId = override.modelId;
+    if (override.reasoning !== undefined) fields.reasoning = override.reasoning;
+    return Object.keys(fields).length > 0 ? fields : undefined;
   }
 
   private initialSelection(config: MultiverseConfig): PresetSelection {
