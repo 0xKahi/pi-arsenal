@@ -116,6 +116,7 @@ describe('Multiverse modal', () => {
     modal.handleInput('j');
     modal.handleInput('\r');
     expect(results).toEqual([]);
+    (tui.terminal as { rows: number }).rows = 24;
   });
 
   it('keeps Megamind disabled when no subagent is available', () => {
@@ -256,6 +257,72 @@ describe('Multiverse modal', () => {
     const rendered = modal.render(40).join('\n');
     expect(rendered).not.toContain(longPreset);
     expect(rendered).not.toContain(longAgent);
+  });
+
+  it('previews a labeled parent action, projected child inheritance, and does not apply on inspection', () => {
+    const results: MultiverseModalResult[] = [];
+    const modal = dialog({
+      activeAgent: 'default',
+      role: parentRole,
+      megamindAvailable: true,
+      presets: {
+        selection: { kind: 'baseline' },
+        parentModel: { provider: 'host-p', id: 'host-m' },
+        parentReasoning: 'low',
+        options: [
+          { selection: { kind: 'baseline' as const }, agents: [{ name: 'fixer', model: {} }] },
+          {
+            selection: { kind: 'named' as const, name: 'smart' },
+            parentOverride: { modelId: 'new-m', reasoning: 'high' as const },
+            agents: [
+              { name: 'megamind', model: { modelId: 'child-m' } },
+              { name: 'fixer', model: {} },
+            ],
+          },
+        ],
+      },
+    }, results);
+    (tui.terminal as { rows: number }).rows = 60;
+    modal.handleInput('\t');
+    modal.handleInput('j');
+    const rendered = modal.render(160).join('\n');
+    expect(rendered).toContain('Parent (on confirm, requested): model new-m (host-p) / reasoning high');
+    expect(rendered).toContain('megamind: child-m (host-p) / requested reasoning: high');
+    expect(rendered).toContain('fixer: new-m (host-p) / requested reasoning: high');
+    expect(results).toEqual([]);
+  });
+
+  it('fills a missing provider or model ID in the parent preview from the live parent', () => {
+    const modal = dialog({
+      activeAgent: 'default',
+      role: parentRole,
+      megamindAvailable: true,
+      presets: {
+        selection: { kind: 'named', name: 'p' },
+        parentModel: { provider: 'host-p', id: 'host-m' },
+        options: [{ selection: { kind: 'named' as const, name: 'p' }, parentOverride: { provider: 'other-p' }, agents: [] }],
+      },
+    });
+    modal.handleInput('\t');
+    expect(modal.render(120).join('\n')).toContain('model host-m (other-p)');
+  });
+
+  it('shows the parent action with an empty roster and reasoning-only fields', () => {
+    const modal = dialog({
+      activeAgent: 'default',
+      role: parentRole,
+      megamindAvailable: true,
+      presets: {
+        selection: { kind: 'named', name: 'r' },
+        parentModel: { provider: 'host-p', id: 'host-m' },
+        options: [{ selection: { kind: 'named' as const, name: 'r' }, parentOverride: { reasoning: 'minimal' as const }, agents: [] }],
+      },
+    });
+    modal.handleInput('\t');
+    const rendered = modal.render(120).join('\n');
+    expect(rendered).toContain('Parent (on confirm, requested): reasoning minimal');
+    expect(rendered).not.toContain('model host-m');
+    expect(rendered).toContain('No available agents.');
   });
 
   it('keeps short tabs compact and cycles Presets before Child Sessions', () => {

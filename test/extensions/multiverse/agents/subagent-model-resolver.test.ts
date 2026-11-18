@@ -23,6 +23,49 @@ describe('SubAgentModelResolver', () => {
     expect(resolver.currentSelection()).toEqual({ kind: 'baseline' });
   });
 
+  describe('presetOverride', () => {
+    const named = (megamind: unknown, extra: Record<string, unknown> = {}) =>
+      new SubAgentModelResolver(config({ presets: { smart: { megamind, ...extra } } }));
+    const smart = { kind: 'named', name: 'smart' } as const;
+
+    it('returns sparse model-only, provider-only, and reasoning-only fields unfilled', () => {
+      expect(named({ modelId: 'm2' }).presetOverride('megamind', smart)).toEqual({ modelId: 'm2' });
+      expect(named({ provider: 'p2' }).presetOverride('megamind', smart)).toEqual({ provider: 'p2' });
+      const reasoning = named({ reasoning: 'high' }).presetOverride('megamind', smart);
+      expect(reasoning).toEqual({ reasoning: 'high' });
+      expect(reasoning && 'modelId' in reasoning).toBe(false);
+    });
+
+    it('returns undefined for empty, missing, baseline, and removed entries', () => {
+      expect(named({}).presetOverride('megamind', smart)).toBeUndefined();
+      expect(named(undefined).presetOverride('megamind', smart)).toBeUndefined();
+      expect(new SubAgentModelResolver(config({ presets: { smart: { fixer: {} } } })).presetOverride('megamind', smart)).toBeUndefined();
+      expect(named({ modelId: 'm2' }).presetOverride('megamind', { kind: 'baseline' })).toBeUndefined();
+      expect(named({ modelId: 'm2' }).presetOverride('megamind', { kind: 'named', name: 'removed' })).toBeUndefined();
+    });
+
+    it('distinguishes a configured preset named default from the baseline', () => {
+      const r = new SubAgentModelResolver(config({ presets: { default: { megamind: { reasoning: 'low' } } } }));
+      expect(r.presetOverride('megamind', { kind: 'named', name: 'default' })).toEqual({ reasoning: 'low' });
+      expect(r.presetOverride('megamind', { kind: 'baseline' })).toBeUndefined();
+    });
+
+    it('ignores subagent settings, uses the current selection by default, and does not mutate', () => {
+      const settings = config({
+        subagents: { megamind: { enabled: true, model: { modelId: 'child' } } },
+        presets: { smart: { megamind: { modelId: 'm2' } } },
+      });
+      const r = new SubAgentModelResolver(settings);
+      const before = JSON.stringify(settings);
+      expect(r.presetOverride('megamind', smart)).toEqual({ modelId: 'm2' });
+      expect(r.presetOverride('megamind')).toBeUndefined();
+      expect(r.currentSelection()).toEqual({ kind: 'baseline' });
+      expect(JSON.stringify(settings)).toBe(before);
+      // Child resolution of the same key still layers the entry over subagent settings.
+      expect(r.resolveModel('megamind', smart)).toEqual({ modelId: 'm2' });
+    });
+  });
+
   it('normalizes missing defaults and removed named selections', () => {
     const resolver = new SubAgentModelResolver(config({ defaultPreset: 'missing', presets: { smart: {} } }));
     expect(resolver.currentSelection()).toEqual({ kind: 'baseline' });
